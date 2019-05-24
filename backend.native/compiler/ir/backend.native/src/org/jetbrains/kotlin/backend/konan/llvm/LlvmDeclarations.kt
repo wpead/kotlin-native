@@ -44,7 +44,6 @@ internal class LlvmDeclarations(
     private val fields: Map<IrField, FieldLlvmDeclarations>,
     private val staticFields: Map<IrField, StaticFieldLlvmDeclarations>,
     private val unique: Map<UniqueKind, UniqueLlvmDeclarations>) {
-    fun forFunction(function: IrFunction) = forFunctionOrNull(function) ?: with(function){error("$name in $file/${parent.fqNameSafe}")}
     fun forFunctionOrNull(function: IrFunction) = functions[function]
 
     fun forClass(irClass: IrClass) = classes[irClass] ?:
@@ -135,11 +134,11 @@ private fun Context.getDeclaredFields(irClass: IrClass): List<IrField> {
     }
 }
 
-private fun ContextUtils.createClassBodyType(name: String, fields: List<IrField>): LLVMTypeRef {
+private fun ContextUtils.createClassBodyType(name: String, fields: List<IrField>, file: IrFile): LLVMTypeRef {
     val fieldTypes = listOf(runtime.objHeaderType) + fields.map { getLLVMType(it.type) }
     // TODO: consider adding synthetic ObjHeader field to Any.
 
-    val classType = LLVMStructCreateNamed(LLVMGetModuleContext(context.llvmModule), name)!!
+    val classType = LLVMStructCreateNamed(LLVMGetModuleContext(context.composer.getLlvmModuleForFile(file)), name)!!
 
     LLVMStructSetBody(classType, fieldTypes.toCValues(), fieldTypes.size, 0)
 
@@ -154,6 +153,8 @@ private class DeclarationsGeneratorVisitor(override val context: Context) :
     val fields = mutableMapOf<IrField, FieldLlvmDeclarations>()
     val staticFields = mutableMapOf<IrField, StaticFieldLlvmDeclarations>()
     val uniques = mutableMapOf<UniqueKind, UniqueLlvmDeclarations>()
+
+    private lateinit var currentFile: IrFile
 
     private class Namer(val prefix: String) {
         private val names = mutableMapOf<IrDeclaration, Name>()
@@ -204,6 +205,11 @@ private class DeclarationsGeneratorVisitor(override val context: Context) :
         element.acceptChildrenVoid(this)
     }
 
+    override fun visitFile(declaration: IrFile) {
+        currentFile = declaration
+        declaration.acceptChildrenVoid(this)
+    }
+
     override fun visitClass(declaration: IrClass) {
         this.classes[declaration] = createClassDeclarations(declaration)
 
@@ -214,7 +220,7 @@ private class DeclarationsGeneratorVisitor(override val context: Context) :
         val internalName = qualifyInternalName(declaration)
 
         val fields = getFields(declaration)
-        val bodyType = createClassBodyType("kclassbody:$internalName", fields)
+        val bodyType = createClassBodyType("kclassbody:$internalName", fields, declaration.file)
 
         val typeInfoPtr: ConstPointer
         val typeInfoGlobal: StaticData.Global
@@ -237,7 +243,7 @@ private class DeclarationsGeneratorVisitor(override val context: Context) :
 
             typeInfoGlobal = staticData.createGlobal(typeInfoWithVtableType, typeInfoGlobalName, isExported = false)
 
-            val llvmTypeInfoPtr = LLVMAddAlias(context.llvmModule,
+            val llvmTypeInfoPtr = LLVMAddAlias(context.composer.getLlvmModuleForFile(currentFile),
                     kTypeInfoPtr,
                     typeInfoGlobal.pointer.getElementPtr(0).llvm,
                     typeInfoSymbolName)!!
@@ -349,7 +355,7 @@ private class DeclarationsGeneratorVisitor(override val context: Context) :
         val classPointerGlobal = staticData.createGlobal(int8TypePtr, "kobjcclassptr:$internalName")
 
         val classInfoGlobal = staticData.createGlobal(
-                context.llvm.runtime.kotlinObjCClassInfo,
+                context.globalLlvm.runtime.kotlinObjCClassInfo,
                 "kobjcclassinfo:$internalName"
         ).apply {
             setConstant(true)
@@ -407,7 +413,7 @@ private class DeclarationsGeneratorVisitor(override val context: Context) :
             val symbolName = if (declaration.isExported()) {
                 declaration.symbolName.also {
                     if (declaration.name.asString() != "main") {
-                        assert(LLVMGetNamedFunction(context.llvm.llvmModule, it) == null) { it }
+                        assert(LLVMGetNamedFunction(context.composer.getLlvmModuleForFile(currentFile), it) == null) { it }
                     } else {
                         // As a workaround, allow `main` functions to clash because frontend accepts this.
                         // See [OverloadResolver.isTopLevelMainInDifferentFiles] usage.
@@ -416,7 +422,7 @@ private class DeclarationsGeneratorVisitor(override val context: Context) :
             } else {
                 "kfun:" + qualifyInternalName(declaration)
             }
-            val function = LLVMAddFunction(context.llvmModule, symbolName, llvmFunctionType)!!
+            val function = LLVMAddFunction(context.composer.getLlvmModuleForFile(currentFile), symbolName, llvmFunctionType)!!
             if (declaration.returnType.isNothing())
                 setFunctionNoReturn(function)
             function

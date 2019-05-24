@@ -22,29 +22,29 @@ internal class VariableManager(val functionGenerationContext: FunctionGeneration
         fun address() : LLVMValueRef
     }
 
-    inner class SlotRecord(val address: LLVMValueRef, val refSlot: Boolean, val isVar: Boolean) : Record {
+    inner class SlotRecord(private val address: LLVMValueRef, private val refSlot: Boolean, val isVar: Boolean) : Record {
         override fun load() : LLVMValueRef = functionGenerationContext.loadSlot(address, isVar)
         override fun store(value: LLVMValueRef) = functionGenerationContext.storeAny(value, address, true)
         override fun address() : LLVMValueRef = this.address
-        override fun toString() = (if (refSlot) "refslot" else "slot") + " for ${address}"
+        override fun toString() = (if (refSlot) "refslot" else "slot") + " for $address"
     }
 
-    inner class ParameterRecord(val address: LLVMValueRef, val refSlot: Boolean) : Record {
+    inner class ParameterRecord(private val address: LLVMValueRef, private val refSlot: Boolean) : Record {
         override fun load() : LLVMValueRef = functionGenerationContext.loadSlot(address, false)
         override fun store(value: LLVMValueRef) = throw Error("writing to parameter")
         override fun address() : LLVMValueRef = this.address
-        override fun toString() = (if (refSlot) "refslot" else "slot") + " for ${address}"
+        override fun toString() = (if (refSlot) "refslot" else "slot") + " for $address"
     }
 
     class ValueRecord(val value: LLVMValueRef, val name: Name) : Record {
         override fun load() : LLVMValueRef = value
-        override fun store(value: LLVMValueRef) = throw Error("writing to immutable: ${name}")
-        override fun address() : LLVMValueRef = throw Error("no address for: ${name}")
-        override fun toString() = "value of ${value} from ${name}"
+        override fun store(value: LLVMValueRef) = throw Error("writing to immutable: $name")
+        override fun address() : LLVMValueRef = throw Error("no address for: $name")
+        override fun toString() = "value of $value from $name"
     }
 
-    val variables: ArrayList<Record> = arrayListOf()
-    val contextVariablesToIndex: HashMap<IrValueDeclaration, Int> = hashMapOf()
+    private val variables: ArrayList<Record> = arrayListOf()
+    private val contextVariablesToIndex: HashMap<IrValueDeclaration, Int> = hashMapOf()
 
     // Clears inner state of variable manager.
     fun clear() {
@@ -56,14 +56,14 @@ internal class VariableManager(val functionGenerationContext: FunctionGeneration
     fun createVariable(valueDeclaration: IrValueDeclaration, value: LLVMValueRef? = null, variableLocation: VariableDebugLocation?) : Int {
         val isVar = valueDeclaration is IrVariable && valueDeclaration.isVar
         // Note that we always create slot for object references for memory management.
-        if (!functionGenerationContext.context.shouldContainDebugInfo() && !isVar && value != null)
-            return createImmutable(valueDeclaration, value)
+        return if (!functionGenerationContext.context.shouldContainDebugInfo() && !isVar && value != null)
+            createImmutable(valueDeclaration, value)
         else
             // Unfortunately, we have to create mutable slots here,
             // as even vals can be assigned on multiple paths. However, we use varness
             // knowledge, as anonymous slots are created only for true vars (for vals
             // their single assigner already have slot).
-            return createMutable(valueDeclaration, isVar, value, variableLocation)
+            createMutable(valueDeclaration, isVar, value, variableLocation)
     }
 
     internal fun createMutable(valueDeclaration: IrValueDeclaration,
@@ -110,7 +110,7 @@ internal class VariableManager(val functionGenerationContext: FunctionGeneration
         return index
     }
 
-    internal fun createImmutable(valueDeclaration: IrValueDeclaration, value: LLVMValueRef) : Int {
+    private fun createImmutable(valueDeclaration: IrValueDeclaration, value: LLVMValueRef) : Int {
         if (contextVariablesToIndex.containsKey(valueDeclaration))
             throw Error("${ir2string(valueDeclaration)} is already defined")
         val index = variables.size

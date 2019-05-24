@@ -41,7 +41,7 @@ internal class Linker(val context: Context) {
         get() = if (nomain || linkerOutput != LinkerOutputKind.EXECUTABLE) emptyList() else platform.entrySelector
 
     fun link(objectFiles: List<ObjectFile>) {
-        val nativeDependencies = context.llvm.nativeDependenciesToLink
+        val nativeDependencies = context.globalLlvm.nativeDependenciesToLink
         val includedBinaries = nativeDependencies.map { it.includedPaths }.flatten()
         val libraryProvidedLinkerFlags = nativeDependencies.map { it.linkerOpts }.flatten()
         runLinker(objectFiles, includedBinaries, libraryProvidedLinkerFlags)

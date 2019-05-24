@@ -208,53 +208,53 @@ private class ExportedElement(val kind: ElementKind,
     fun generateCAdapter() {
         when {
             isFunction -> {
-                val function = declaration as FunctionDescriptor
-                val irFunction = irSymbol.owner as IrFunction
-                cname = "_konan_function_${owner.nextFunctionIndex()}"
-                val llvmFunction = owner.codegen.llvmFunction(irFunction)
-                // If function is virtual, we need to resolve receiver properly.
-                val bridge = if (!DescriptorUtils.isTopLevelDeclaration(function) && !function.isExtension &&
-                        function.isOverridable) {
-                    // We need LLVMGetElementType() as otherwise type is function pointer.
-                    generateFunction(owner.codegen, LLVMGetElementType(llvmFunction.type)!!, cname) {
-                        val receiver = param(0)
-                        val numParams = LLVMCountParams(llvmFunction)
-                        val args = (0..numParams - 1).map { index -> param(index) }
-                        val callee = lookupVirtualImpl(receiver, irFunction)
-                        val result = call(callee, args, exceptionHandler = ExceptionHandler.Caller, verbatim = true)
-                        ret(result)
-                    }
-                } else {
-                    LLVMAddAlias(context.llvmModule, llvmFunction.type, llvmFunction, cname)!!
-                }
-                LLVMSetLinkage(bridge, LLVMLinkage.LLVMExternalLinkage)
+//                val function = declaration as FunctionDescriptor
+//                val irFunction = irSymbol.owner as IrFunction
+//                cname = "_konan_function_${owner.nextFunctionIndex()}"
+//                val llvmFunction = owner.globalCodegen.llvmFunction(irFunction)
+//                // If function is virtual, we need to resolve receiver properly.
+//                val bridge = if (!DescriptorUtils.isTopLevelDeclaration(function) && !function.isExtension &&
+//                        function.isOverridable) {
+//                    // We need LLVMGetElementType() as otherwise type is function pointer.
+//                    generateFunction(owner.globalCodegen, LLVMGetElementType(llvmFunction.type)!!, cname) {
+//                        val receiver = param(0)
+//                        val numParams = LLVMCountParams(llvmFunction)
+//                        val args = (0..numParams - 1).map { index -> param(index) }
+//                        val callee = lookupVirtualImpl(receiver, irFunction)
+//                        val result = call(callee, args, exceptionHandler = ExceptionHandler.Caller, verbatim = true)
+//                        ret(result)
+//                    }
+//                } else {
+//                    LLVMAddAlias(context.llvmModule, llvmFunction.type, llvmFunction, cname)!!
+//                }
+//                LLVMSetLinkage(bridge, LLVMLinkage.LLVMExternalLinkage)
             }
             isClass -> {
-                val irClass = irSymbol.owner as IrClass
-                cname = "_konan_function_${owner.nextFunctionIndex()}"
-                // Produce type getter.
-                val getTypeFunction = LLVMAddFunction(context.llvmModule, "${cname}_type", owner.kGetTypeFuncType)!!
-                val builder = LLVMCreateBuilder()!!
-                val bb = LLVMAppendBasicBlock(getTypeFunction, "")!!
-                LLVMPositionBuilderAtEnd(builder, bb)
-                LLVMBuildRet(builder, irClass.typeInfoPtr.llvm)
-                LLVMDisposeBuilder(builder)
-                // Produce instance getter if needed.
-                if (isSingletonObject) {
-                    generateFunction(owner.codegen, owner.kGetObjectFuncType, "${cname}_instance") {
-                        val value = getObjectValue(irClass, ExceptionHandler.Caller, null)
-                        ret(value)
-                    }
-                }
+//                val irClass = irSymbol.owner as IrClass
+//                cname = "_konan_function_${owner.nextFunctionIndex()}"
+//                // Produce type getter.
+//                val getTypeFunction = LLVMAddFunction(context.llvmModule, "${cname}_type", owner.kGetTypeFuncType)!!
+//                val builder = LLVMCreateBuilder()!!
+//                val bb = LLVMAppendBasicBlock(getTypeFunction, "")!!
+//                LLVMPositionBuilderAtEnd(builder, bb)
+//                LLVMBuildRet(builder, irClass.typeInfoPtr.llvm)
+//                LLVMDisposeBuilder(builder)
+//                // Produce instance getter if needed.
+//                if (isSingletonObject) {
+//                    generateFunction(owner.globalCodegen, owner.kGetObjectFuncType, "${cname}_instance") {
+//                        val value = getObjectValue(irClass, ExceptionHandler.Caller, null)
+//                        ret(value)
+//                    }
+//                }
             }
             isEnumEntry -> {
-                // Produce entry getter.
-                cname = "_konan_function_${owner.nextFunctionIndex()}"
-                generateFunction(owner.codegen, owner.kGetObjectFuncType, cname) {
-                    val irEnumEntry = irSymbol.owner as IrEnumEntry
-                    val value = getEnumEntry(irEnumEntry, ExceptionHandler.Caller)
-                    ret(value)
-                }
+//                // Produce entry getter.
+//                cname = "_konan_function_${owner.nextFunctionIndex()}"
+//                generateFunction(owner.globalCodegen, owner.kGetObjectFuncType, cname) {
+//                    val irEnumEntry = irSymbol.owner as IrEnumEntry
+//                    val value = getEnumEntry(irEnumEntry, ExceptionHandler.Caller)
+//                    ret(value)
+//                }
             }
         }
     }

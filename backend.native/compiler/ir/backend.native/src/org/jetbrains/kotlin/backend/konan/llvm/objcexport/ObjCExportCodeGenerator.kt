@@ -42,10 +42,12 @@ internal class ObjCExportCodeGenerator(
     val runtime get() = codegen.runtime
     val staticData get() = codegen.staticData
 
+    val llvm = Llvm(context, context.composer.getGlobalLlvmModule())
+
     val rttiGenerator = RTTIGenerator(context)
 
     private val objcTerminate: LLVMValueRef by lazy {
-        context.llvm.externalFunction(
+        llvm.externalFunction(
                 "objc_terminate",
                 functionType(voidType, false),
                 CurrentKonanModuleOrigin
@@ -115,10 +117,10 @@ internal class ObjCExportCodeGenerator(
     }
 
     fun FunctionGenerationContext.kotlinReferenceToObjC(value: LLVMValueRef) =
-            callFromBridge(context.llvm.Kotlin_ObjCExport_refToObjC, listOf(value))
+            callFromBridge(llvm.Kotlin_ObjCExport_refToObjC, listOf(value))
 
     fun FunctionGenerationContext.objCReferenceToKotlin(value: LLVMValueRef, resultLifetime: Lifetime) =
-            callFromBridge(context.llvm.Kotlin_ObjCExport_refFromObjC, listOf(value), resultLifetime)
+            callFromBridge(llvm.Kotlin_ObjCExport_refFromObjC, listOf(value), resultLifetime)
 
     private fun FunctionGenerationContext.objCBlockPointerToKotlin(
             value: LLVMValueRef,
@@ -177,7 +179,7 @@ internal class ObjCExportCodeGenerator(
     }
 
     fun FunctionGenerationContext.initRuntimeIfNeeded() {
-        callFromBridge(context.llvm.initRuntimeIfNeeded, emptyList())
+        callFromBridge(llvm.initRuntimeIfNeeded, emptyList())
     }
 
     inline fun FunctionGenerationContext.convertKotlin(
@@ -485,37 +487,37 @@ private fun ObjCExportCodeGenerator.emitBlockToKotlinFunctionConverters() {
 private fun ObjCExportCodeGenerator.emitSpecialClassesConvertions() {
     setObjCExportTypeInfo(
             symbols.string.owner,
-            constPointer(context.llvm.Kotlin_ObjCExport_CreateNSStringFromKString)
+            constPointer(llvm.Kotlin_ObjCExport_CreateNSStringFromKString)
     )
 
     setObjCExportTypeInfo(
             symbols.list.owner,
-            constPointer(context.llvm.Kotlin_Interop_CreateNSArrayFromKList)
+            constPointer(llvm.Kotlin_Interop_CreateNSArrayFromKList)
     )
 
     setObjCExportTypeInfo(
             symbols.mutableList.owner,
-            constPointer(context.llvm.Kotlin_Interop_CreateNSMutableArrayFromKList)
+            constPointer(llvm.Kotlin_Interop_CreateNSMutableArrayFromKList)
     )
 
     setObjCExportTypeInfo(
             symbols.set.owner,
-            constPointer(context.llvm.Kotlin_Interop_CreateNSSetFromKSet)
+            constPointer(llvm.Kotlin_Interop_CreateNSSetFromKSet)
     )
 
     setObjCExportTypeInfo(
             symbols.mutableSet.owner,
-            constPointer(context.llvm.Kotlin_Interop_CreateKotlinMutableSetFromKSet)
+            constPointer(llvm.Kotlin_Interop_CreateKotlinMutableSetFromKSet)
     )
 
     setObjCExportTypeInfo(
             symbols.map.owner,
-            constPointer(context.llvm.Kotlin_Interop_CreateNSDictionaryFromKMap)
+            constPointer(llvm.Kotlin_Interop_CreateNSDictionaryFromKMap)
     )
 
     setObjCExportTypeInfo(
             symbols.mutableMap.owner,
-            constPointer(context.llvm.Kotlin_Interop_CreateKotlinMutableDictonaryFromKMap)
+            constPointer(llvm.Kotlin_Interop_CreateKotlinMutableDictonaryFromKMap)
     )
 
     emitBoxConverters()
@@ -529,7 +531,7 @@ private inline fun ObjCExportCodeGenerator.generateObjCImpBy(
         methodBridge: MethodBridge,
         genBody: FunctionGenerationContext.() -> Unit
 ): LLVMValueRef {
-    val result = LLVMAddFunction(context.llvmModule, "", objCFunctionType(context, methodBridge))!!
+    val result = LLVMAddFunction(llvm.llvmModule, "", objCFunctionType(context, methodBridge))!!
 
     generateFunction(codegen, result) {
         genBody()
@@ -542,7 +544,7 @@ private inline fun ObjCExportCodeGenerator.generateObjCImpBy(
 private fun ObjCExportCodeGenerator.generateAbstractObjCImp(methodBridge: MethodBridge): LLVMValueRef =
         generateObjCImpBy(methodBridge) {
             callFromBridge(
-                    context.llvm.Kotlin_ObjCExport_AbstractMethodCalled,
+                    llvm.Kotlin_ObjCExport_AbstractMethodCalled,
                     listOf(param(0), param(1))
             )
             unreachable()
@@ -623,7 +625,7 @@ private fun ObjCExportCodeGenerator.generateObjCImp(
     } else {
         kotlinExceptionHandler { exception ->
             callFromBridge(
-                    context.llvm.Kotlin_ObjCExport_RethrowExceptionAsNSError,
+                    llvm.Kotlin_ObjCExport_RethrowExceptionAsNSError,
                     listOf(exception, errorOutPtr!!)
             )
 
@@ -676,7 +678,7 @@ private fun ObjCExportCodeGenerator.generateObjCImpForArrayConstructor(
         methodBridge: MethodBridge
 ): LLVMValueRef = generateObjCImp(methodBridge) { args, resultLifetime, exceptionHandler ->
     val arrayInstance = callFromBridge(
-            context.llvm.allocArrayFunction,
+            llvm.allocArrayFunction,
             listOf(target.constructedClass.llvmTypeInfoPtr, args.first()),
             resultLifetime = Lifetime.ARGUMENT
     )
@@ -750,7 +752,7 @@ private fun ObjCExportCodeGenerator.generateKotlinToObjCBridge(
 
         fun rethrow() {
             val error = load(errorOutPtr!!)
-            callFromBridge(context.llvm.Kotlin_ObjCExport_RethrowNSErrorAsException, listOf(error))
+            callFromBridge(llvm.Kotlin_ObjCExport_RethrowNSErrorAsException, listOf(error))
             unreachable()
         }
 
@@ -1135,7 +1137,7 @@ private fun ObjCExportCodeGenerator.createUnitInstanceAdapter() =
         ) {
             initRuntimeIfNeeded() // For instance methods it gets called when allocating.
 
-            ret(callFromBridge(context.llvm.Kotlin_ObjCExport_convertUnit, listOf(codegen.theUnitInstanceRef.llvm)))
+            ret(callFromBridge(llvm.Kotlin_ObjCExport_convertUnit, listOf(codegen.theUnitInstanceRef.llvm)))
         }
 
 private fun ObjCExportCodeGenerator.createObjectInstanceAdapter(

@@ -105,7 +105,7 @@ internal class BitcodeCompiler(val context: Context) {
 
         val flags = mutableListOf<String>().apply {
             addNonEmpty(configurables.clangFlags)
-            addNonEmpty(listOf("-triple", context.llvm.targetTriple))
+            addNonEmpty(listOf("-triple", context.globalLlvm.runtime.target))
             addNonEmpty(when {
                 optimize -> configurables.clangOptFlags
                 debug -> configurables.clangDebugFlags

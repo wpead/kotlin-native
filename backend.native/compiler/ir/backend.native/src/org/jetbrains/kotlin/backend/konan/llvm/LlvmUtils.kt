@@ -197,30 +197,30 @@ internal fun getGlobalType(ptrToGlobal: LLVMValueRef): LLVMTypeRef {
 internal fun ContextUtils.addGlobal(name: String, type: LLVMTypeRef, isExported: Boolean,
                                     threadLocal: Boolean = false): LLVMValueRef {
     if (isExported)
-        assert(LLVMGetNamedGlobal(context.llvmModule, name) == null)
-    val result = LLVMAddGlobal(context.llvmModule, type, name)!!
+        assert(LLVMGetNamedGlobal(context.composer.getGlobalLlvmModule(), name) == null)
+    val result = LLVMAddGlobal(context.composer.getGlobalLlvmModule(), type, name)!!
     if (threadLocal)
-        LLVMSetThreadLocalMode(result, context.llvm.tlsMode)
+        LLVMSetThreadLocalMode(result, context.globalLlvm.tlsMode)
     return result
 }
 
 internal fun ContextUtils.importGlobal(name: String, type: LLVMTypeRef, origin: CompiledKonanModuleOrigin,
                                        threadLocal: Boolean = false): LLVMValueRef {
 
-    context.llvm.imports.add(origin)
+    context.globalLlvm.imports.add(origin)
 
-    val found = LLVMGetNamedGlobal(context.llvmModule, name)
-    if (found != null) {
+    val found = LLVMGetNamedGlobal(context.composer.getGlobalLlvmModule(), name)
+    return if (found != null) {
         assert (getGlobalType(found) == type)
         assert (LLVMGetInitializer(found) == null) { "$name is already declared in the current module" }
         if (threadLocal)
-            assert(LLVMGetThreadLocalMode(found) == context.llvm.tlsMode)
-        return found
+            assert(LLVMGetThreadLocalMode(found) == context.globalLlvm.tlsMode)
+        found
     } else {
-        val result = LLVMAddGlobal(context.llvmModule, type, name)!!
+        val result = LLVMAddGlobal(context.composer.getGlobalLlvmModule(), type, name)!!
         if (threadLocal)
-            LLVMSetThreadLocalMode(result, context.llvm.tlsMode)
-        return result
+            LLVMSetThreadLocalMode(result, context.globalLlvm.tlsMode)
+        result
     }
 }
 

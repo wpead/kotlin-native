@@ -31,11 +31,11 @@ internal class KotlinObjCClassInfoGenerator(override val context: Context) : Con
         val classMethods = companionObject?.generateMethodDescs().orEmpty()
 
         val superclassName = irClass.getSuperClassNotAny()!!.let {
-            context.llvm.imports.add(it.llvmSymbolOrigin)
+            context.globalLlvm.imports.add(it.llvmSymbolOrigin)
             it.descriptor.getExternalObjCClassBinaryName()
         }
         val protocolNames = irClass.getSuperInterfaces().map {
-            context.llvm.imports.add(it.llvmSymbolOrigin)
+            context.globalLlvm.imports.add(it.llvmSymbolOrigin)
             it.name.asString().removeSuffix("Protocol")
         }
 

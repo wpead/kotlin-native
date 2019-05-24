@@ -268,7 +268,7 @@ internal class ObjCExport(val context: Context, symbolTable: SymbolTable) {
         val result = Command(clangCommand).getResult(withErrors = true)
 
         if (result.exitCode == 0) {
-            context.llvm.additionalProducedBitcodeFiles += bitcode.absolutePath
+            context.globalLlvm.additionalProducedBitcodeFiles += bitcode.absolutePath
         } else {
             // Note: ignoring compile errors intentionally.
             // In this case resulting framework will likely be unusable due to compile errors when importing it.

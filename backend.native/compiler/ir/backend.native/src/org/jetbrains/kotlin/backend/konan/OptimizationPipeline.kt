@@ -39,7 +39,7 @@ private class LlvmPipelineConfiguration(context: Context) {
 
     private val target = context.config.target
 
-    val targetTriple: String = context.llvm.targetTriple
+    val targetTriple: String = context.globalLlvm.runtime.target
 
     val cpuArchitecture: String = when (target) {
         KonanTarget.IOS_ARM32 -> "armv7"
@@ -92,9 +92,8 @@ private class LlvmPipelineConfiguration(context: Context) {
 
 // Since we are in a "closed world" internalization and global dce
 // can be safely used to reduce size of a bitcode.
-internal fun runClosedWorldCleanup(context: Context) {
+internal fun runClosedWorldCleanup(context: Context, llvmModule: LLVMModuleRef) {
     initializeLlvmGlobalPassRegistry()
-    val llvmModule = context.llvmModule!!
     val modulePasses = LLVMCreatePassManager()
     LLVMAddInternalizePass(modulePasses, 0)
     LLVMAddGlobalDCEPass(modulePasses)
@@ -102,8 +101,7 @@ internal fun runClosedWorldCleanup(context: Context) {
     LLVMDisposePassManager(modulePasses)
 }
 
-internal fun runLlvmOptimizationPipeline(context: Context) {
-    val llvmModule = context.llvmModule!!
+internal fun runLlvmOptimizationPipeline(context: Context, llvmModule: LLVMModuleRef) {
     val config = LlvmPipelineConfiguration(context)
 
     memScoped {

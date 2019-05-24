@@ -19,9 +19,8 @@ internal val contextLLVMSetupPhase = makeKonanModuleOpPhase(
             // (see Llvm class in ContextUtils)
             // Which in turn is determined by the clang flags
             // used to compile runtime.bc.
-            val llvmModule = LLVMModuleCreateWithName("out")!! // TODO: dispose
-            context.llvmModule = llvmModule
-            context.debugInfo.builder = DICreateBuilder(llvmModule)
+            context.composer.initialize()
+            context.debugInfo.builder = DICreateBuilder(context.composer.getGlobalLlvmModule())
             context.llvmDeclarations = createLlvmDeclarations(context)
             context.lifetimes = mutableMapOf()
             context.codegenVisitor = CodeGeneratorVisitor(context, context.lifetimes)
@@ -121,7 +120,7 @@ internal val finalizeDebugInfoPhase = makeKonanModuleOpPhase(
 internal val cStubsPhase = makeKonanModuleOpPhase(
         name = "CStubs",
         description = "C stubs compilation",
-        op = { context, _ -> produceCStubs(context) }
+        op = { context, _ -> produceCStubs(context, context.composer.getCStubsModule()) }
 )
 
 internal val produceOutputPhase = makeKonanModuleOpPhase(

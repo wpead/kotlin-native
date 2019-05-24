@@ -129,7 +129,7 @@ internal fun ContextUtils.unique(kind: UniqueKind): ConstPointer {
     }
     return if (isExternal(descriptor)) {
         constPointer(importGlobal(
-                kind.llvmName, context.llvm.runtime.objHeaderType, origin = descriptor.llvmSymbolOrigin
+                kind.llvmName, context.globalLlvm.runtime.objHeaderType, origin = descriptor.llvmSymbolOrigin
         ))
     } else {
         context.llvmDeclarations.forUnique(kind).pointer

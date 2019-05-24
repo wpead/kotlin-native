@@ -39,7 +39,7 @@ internal class ObjCDataGenerator(val codegen: CodeGenerator) {
         global.setAlignment(codegen.runtime.pointerAlignment)
         global.setSection("__DATA,__objc_selrefs,literal_pointers,no_dead_strip")
 
-        context.llvm.compilerUsedGlobals += global.llvmGlobal
+        context.globalLlvm.compilerUsedGlobals += global.llvmGlobal
 
         global.pointer
     }
@@ -52,7 +52,7 @@ internal class ObjCDataGenerator(val codegen: CodeGenerator) {
             it.setAlignment(codegen.runtime.pointerAlignment)
         }
 
-        context.llvm.compilerUsedGlobals += global.pointer.llvm
+        context.globalLlvm.compilerUsedGlobals += global.pointer.llvm
 
         global.pointer.bitcast(pointerType(int8TypePtr))
     }
@@ -60,8 +60,8 @@ internal class ObjCDataGenerator(val codegen: CodeGenerator) {
     val classObjectType = codegen.runtime.getStructType("_class_t")
 
     fun exportClass(name: String) {
-        context.llvm.usedGlobals += getClassGlobal(name, isMetaclass = false).llvm
-        context.llvm.usedGlobals += getClassGlobal(name, isMetaclass = true).llvm
+        context.globalLlvm.usedGlobals += getClassGlobal(name, isMetaclass = false).llvm
+        context.globalLlvm.usedGlobals += getClassGlobal(name, isMetaclass = true).llvm
     }
 
     private fun getClassGlobal(name: String, isMetaclass: Boolean): ConstPointer {
@@ -95,7 +95,7 @@ internal class ObjCDataGenerator(val codegen: CodeGenerator) {
     class Method(val selector: String, val encoding: String, val imp: ConstPointer)
 
     fun emitClass(name: String, superName: String, instanceMethods: List<Method>) {
-        val runtime = context.llvm.runtime
+        val runtime = context.globalLlvm.runtime
         fun struct(name: String) = runtime.getStructType(name)
 
         val classRoType = struct("_class_ro_t")
@@ -127,7 +127,7 @@ internal class ObjCDataGenerator(val codegen: CodeGenerator) {
                 it.setSection("__DATA, __objc_const")
             }
 
-            context.llvm.compilerUsedGlobals += global.llvmGlobal
+            context.globalLlvm.compilerUsedGlobals += global.llvmGlobal
 
             return global.pointer.bitcast(pointerType(methodListType))
         }
@@ -201,7 +201,7 @@ internal class ObjCDataGenerator(val codegen: CodeGenerator) {
             LLVMSetSection(classGlobal.llvm, "__DATA, __objc_data")
             LLVMSetAlignment(classGlobal.llvm, LLVMABIAlignmentOfType(runtime.targetData, classObjectType))
 
-            context.llvm.usedGlobals.add(classGlobal.llvm)
+            context.globalLlvm.usedGlobals.add(classGlobal.llvm)
 
             return classGlobal
         }
@@ -236,14 +236,14 @@ internal class ObjCDataGenerator(val codegen: CodeGenerator) {
 
         global.setAlignment(
                 LLVMABIAlignmentOfType(
-                        context.llvm.runtime.targetData,
+                        context.globalLlvm.runtime.targetData,
                         LLVMGetInitializer(global.llvmGlobal)!!.type
                 )
         )
 
         global.setSection(section)
 
-        context.llvm.compilerUsedGlobals += global.llvmGlobal
+        context.globalLlvm.compilerUsedGlobals += global.llvmGlobal
     }
 
     private val classNames =
@@ -261,7 +261,7 @@ internal class ObjCDataGenerator(val codegen: CodeGenerator) {
 
         fun get(value: String) = literals.getOrPut(value) {
             val bytes = value.toByteArray(Charsets.UTF_8).map { Int8(it) } + Int8(0)
-            val global = context.llvm.staticData.placeGlobalArray(label, int8Type, bytes)
+            val global = context.globalLlvm.staticData.placeGlobalArray(label, int8Type, bytes)
 
             global.setConstant(true)
             global.setLinkage(LLVMLinkage.LLVMPrivateLinkage)
@@ -269,7 +269,7 @@ internal class ObjCDataGenerator(val codegen: CodeGenerator) {
             LLVMSetUnnamedAddr(global.llvmGlobal, 1)
             global.setAlignment(1)
 
-            context.llvm.compilerUsedGlobals += global.llvmGlobal
+            context.globalLlvm.compilerUsedGlobals += global.llvmGlobal
 
             global.pointer.getElementPtr(0)
         }

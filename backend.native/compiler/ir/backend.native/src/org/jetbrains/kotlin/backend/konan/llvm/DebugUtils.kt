@@ -71,16 +71,14 @@ internal class DebugInfo internal constructor(override val context: Context):Con
     var types = mutableMapOf<KotlinType, DITypeOpaqueRef>()
 
     val llvmTypes = mapOf<KotlinType, LLVMTypeRef>(
-            context.builtIns.booleanType to context.llvm.llvmInt8,
-            context.builtIns.byteType    to context.llvm.llvmInt8,
-            context.builtIns.charType    to context.llvm.llvmInt8,
-            context.builtIns.shortType   to context.llvm.llvmInt16,
-            context.builtIns.intType     to context.llvm.llvmInt32,
-            context.builtIns.longType    to context.llvm.llvmInt64,
-            context.builtIns.floatType   to context.llvm.llvmFloat,
-            context.builtIns.doubleType  to context.llvm.llvmDouble)
-    val intTypes = listOf<KotlinType>(context.builtIns.byteType, context.builtIns.shortType, context.builtIns.intType, context.builtIns.longType)
-    val realTypes = listOf<KotlinType>(context.builtIns.floatType, context.builtIns.doubleType)
+            context.builtIns.booleanType to context.globalLlvm.llvmInt8,
+            context.builtIns.byteType    to context.globalLlvm.llvmInt8,
+            context.builtIns.charType    to context.globalLlvm.llvmInt8,
+            context.builtIns.shortType   to context.globalLlvm.llvmInt16,
+            context.builtIns.intType     to context.globalLlvm.llvmInt32,
+            context.builtIns.longType    to context.globalLlvm.llvmInt64,
+            context.builtIns.floatType   to context.globalLlvm.llvmFloat,
+            context.builtIns.doubleType  to context.globalLlvm.llvmDouble)
     val llvmTypeSizes = llvmTypes.map { it.key to LLVMSizeOfTypeInBits(llvmTargetData, it.value) }.toMap()
     val llvmTypeAlignments = llvmTypes.map {it.key to LLVMPreferredAlignmentOfType(llvmTargetData, it.value)}.toMap()
     val otherLlvmType = LLVMPointerType(LLVMInt64Type(), 0)!!
@@ -121,44 +119,44 @@ internal fun String?.toFileAndFolder():FileAndFolder {
 }
 
 internal fun generateDebugInfoHeader(context: Context) {
-    if (context.shouldContainDebugInfo()) {
-        val path = context.config.outputFile
-            .toFileAndFolder()
-        @Suppress("UNCHECKED_CAST")
-        context.debugInfo.module   = DICreateModule(
-                builder            = context.debugInfo.builder,
-                scope              = context.llvmModule as DIScopeOpaqueRef,
-                name               = path.path(),
-                configurationMacro = "",
-                includePath        = "",
-                iSysRoot           = "")
-        /* TODO: figure out what here 2 means:
-         *
-         * 0:b-backend-dwarf:minamoto@minamoto-osx(0)# cat /dev/null | clang -xc -S -emit-llvm -g -o - -
-         * ; ModuleID = '-'
-         * source_filename = "-"
-         * target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
-         * target triple = "x86_64-apple-macosx10.12.0"
-         *
-         * !llvm.dbg.cu = !{!0}
-         * !llvm.module.flags = !{!3, !4, !5}
-         * !llvm.ident = !{!6}
-         *
-         * !0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "Apple LLVM version 8.0.0 (clang-800.0.38)", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, enums: !2)
-         * !1 = !DIFile(filename: "-", directory: "/Users/minamoto/ws/.git-trees/backend-dwarf")
-         * !2 = !{}
-         * !3 = !{i32 2, !"Dwarf Version", i32 2}              ; <-
-         * !4 = !{i32 2, !"Debug Info Version", i32 700000003} ; <-
-         * !5 = !{i32 1, !"PIC Level", i32 2}
-         * !6 = !{!"Apple LLVM version 8.0.0 (clang-800.0.38)"}
-         */
-        val llvmTwo = Int32(2).llvm
-        val dwarfVersion = node(llvmTwo, DWARF.dwarfVersionMetaDataNodeName, Int32(DWARF.dwarfVersion(context.config)).llvm)
-        val nodeDebugInfoVersion = node(llvmTwo, DWARF.dwarfDebugInfoMetaDataNodeName, Int32(DWARF.debugInfoVersion).llvm)
-        val llvmModuleFlags = "llvm.module.flags"
-        LLVMAddNamedMetadataOperand(context.llvmModule, llvmModuleFlags, dwarfVersion)
-        LLVMAddNamedMetadataOperand(context.llvmModule, llvmModuleFlags, nodeDebugInfoVersion)
-    }
+//    if (context.shouldContainDebugInfo()) {
+//        val path = context.config.outputFile
+//            .toFileAndFolder()
+//        @Suppress("UNCHECKED_CAST")
+//        context.debugInfo.module   = DICreateModule(
+//                builder            = context.debugInfo.builder,
+//                scope              = context.llvmModule as DIScopeOpaqueRef,
+//                name               = path.path(),
+//                configurationMacro = "",
+//                includePath        = "",
+//                iSysRoot           = "")
+//        /* TODO: figure out what here 2 means:
+//         *
+//         * 0:b-backend-dwarf:minamoto@minamoto-osx(0)# cat /dev/null | clang -xc -S -emit-llvm -g -o - -
+//         * ; ModuleID = '-'
+//         * source_filename = "-"
+//         * target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
+//         * target triple = "x86_64-apple-macosx10.12.0"
+//         *
+//         * !llvm.dbg.cu = !{!0}
+//         * !llvm.module.flags = !{!3, !4, !5}
+//         * !llvm.ident = !{!6}
+//         *
+//         * !0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: "Apple LLVM version 8.0.0 (clang-800.0.38)", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, enums: !2)
+//         * !1 = !DIFile(filename: "-", directory: "/Users/minamoto/ws/.git-trees/backend-dwarf")
+//         * !2 = !{}
+//         * !3 = !{i32 2, !"Dwarf Version", i32 2}              ; <-
+//         * !4 = !{i32 2, !"Debug Info Version", i32 700000003} ; <-
+//         * !5 = !{i32 1, !"PIC Level", i32 2}
+//         * !6 = !{!"Apple LLVM version 8.0.0 (clang-800.0.38)"}
+//         */
+//        val llvmTwo = Int32(2).llvm
+//        val dwarfVersion = node(llvmTwo, DWARF.dwarfVersionMetaDataNodeName, Int32(DWARF.dwarfVersion(context.config)).llvm)
+//        val nodeDebugInfoVersion = node(llvmTwo, DWARF.dwarfDebugInfoMetaDataNodeName, Int32(DWARF.debugInfoVersion).llvm)
+//        val llvmModuleFlags = "llvm.module.flags"
+//        LLVMAddNamedMetadataOperand(context.llvmModule, llvmModuleFlags, dwarfVersion)
+//        LLVMAddNamedMetadataOperand(context.llvmModule, llvmModuleFlags, nodeDebugInfoVersion)
+//    }
 }
 
 @Suppress("UNCHECKED_CAST")
@@ -216,12 +214,12 @@ internal fun KotlinType.alignment(context:Context) = context.debugInfo.llvmTypeA
 
 internal fun KotlinType.llvmType(context:Context): LLVMTypeRef = context.debugInfo.llvmTypes.getOrElse(this) {
     when(computePrimitiveBinaryTypeOrNull()) {
-        PrimitiveBinaryType.BYTE -> context.llvm.llvmInt8
-        PrimitiveBinaryType.SHORT -> context.llvm.llvmInt16
-        PrimitiveBinaryType.INT -> context.llvm.llvmInt32
-        PrimitiveBinaryType.LONG -> context.llvm.llvmInt64
-        PrimitiveBinaryType.FLOAT -> context.llvm.llvmFloat
-        PrimitiveBinaryType.DOUBLE -> context.llvm.llvmDouble
+        PrimitiveBinaryType.BYTE -> context.globalLlvm.llvmInt8
+        PrimitiveBinaryType.SHORT -> context.globalLlvm.llvmInt16
+        PrimitiveBinaryType.INT -> context.globalLlvm.llvmInt32
+        PrimitiveBinaryType.LONG -> context.globalLlvm.llvmInt64
+        PrimitiveBinaryType.FLOAT -> context.globalLlvm.llvmFloat
+        PrimitiveBinaryType.DOUBLE -> context.globalLlvm.llvmDouble
         else -> context.debugInfo.otherLlvmType
     }
 }

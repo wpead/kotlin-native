@@ -611,7 +611,7 @@ internal class InteropLoweringPart1(val context: Context) : BaseInteropIrTransfo
                     .constructors.single { it.valueParameters.size == 0 }.symbol
 
             return builder.irBlock(expression) {
-                // Required for the IR to be valid, will be ignored in codegen:
+                // Required for the IR to be valid, will be ignored in globalCodegen:
                 +IrDelegatingConstructorCallImpl(
                         startOffset,
                         endOffset,
@@ -641,7 +641,7 @@ internal class InteropLoweringPart1(val context: Context) : BaseInteropIrTransfo
     ): IrExpression = generateWithStubs(call) {
         if (method.parent !is IrClass) {
             // Category-provided.
-            this@InteropLoweringPart1.context.llvmImports.add(method.llvmSymbolOrigin)
+            this@InteropLoweringPart1.context.globalLlvm.imports.add(method.llvmSymbolOrigin)
         }
 
         this.generateObjCCall(
@@ -896,7 +896,7 @@ private class InteropTransformer(val context: Context, override val irFile: IrFi
         }
 
         if (function.descriptor.annotations.hasAnnotation(RuntimeNames.cCall)) {
-            context.llvmImports.add(function.descriptor.llvmSymbolOrigin)
+            context.globalLlvm.imports.add(function.descriptor.llvmSymbolOrigin)
             return generateWithStubs { generateCCall(expression, builder, isInvoke = false) }
         }
 

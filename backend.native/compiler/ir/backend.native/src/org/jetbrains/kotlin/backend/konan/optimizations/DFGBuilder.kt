@@ -122,7 +122,7 @@ private class ExpressionValuesExtractor(val context: Context,
 
             is IrGetField -> block(expression)
 
-            is IrVararg -> /* Sometimes, we keep vararg till codegen phase (for constant arrays). */
+            is IrVararg -> /* Sometimes, we keep vararg till globalCodegen phase (for constant arrays). */
                 block(expression)
 
             is IrConst<*> -> block(expression)

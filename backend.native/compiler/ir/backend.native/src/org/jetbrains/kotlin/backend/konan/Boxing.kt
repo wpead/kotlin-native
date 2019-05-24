@@ -165,7 +165,7 @@ private fun initCache(cache: BoxCache, context: Context, cacheName: String,
                       rangeStartName: String, rangeEndName: String) {
 
     val kotlinType = context.irBuiltIns.getKotlinClass(cache)
-    val staticData = context.llvm.staticData
+    val staticData = context.globalLlvm.staticData
     val llvmType = staticData.getLLVMType(kotlinType.defaultType)
 
     val (start, end) = context.config.target.getBoxCacheRange(cache)
@@ -176,7 +176,7 @@ private fun initCache(cache: BoxCache, context: Context, cacheName: String,
     staticData.placeGlobal(rangeEndName, createConstant(llvmType, end), true)
             .setConstant(true)
     val values = (start..end).map { staticData.createInitializer(kotlinType, createConstant(llvmType, it)) }
-    val llvmBoxType = structType(context.llvm.runtime.objHeaderType, llvmType)
+    val llvmBoxType = structType(context.globalLlvm.runtime.objHeaderType, llvmType)
     staticData.placeGlobalConstArray(cacheName, llvmBoxType, values, true).llvm
 }
 

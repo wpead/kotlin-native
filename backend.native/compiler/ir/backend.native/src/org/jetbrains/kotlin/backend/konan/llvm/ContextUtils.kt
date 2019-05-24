@@ -131,7 +131,7 @@ internal interface ContextUtils : RuntimeAware {
     val context: Context
 
     override val runtime: Runtime
-        get() = context.llvm.runtime
+        get() = context.globalLlvm.runtime
 
     /**
      * Describes the target platform.
@@ -204,7 +204,7 @@ internal interface ContextUtils : RuntimeAware {
      */
     fun GlobalHash.getBytes(): ByteArray {
         val size = GlobalHash.size
-        assert(size.toLong() == LLVMStoreSizeOfType(llvmTargetData, runtime.globalHashType))
+        assert(size == LLVMStoreSizeOfType(llvmTargetData, runtime.globalHashType))
 
         return this.bits.getBytes(size)
     }
@@ -251,8 +251,105 @@ internal val Name.localHash: LocalHash
 internal val FqName.localHash: LocalHash
     get() = this.toString().localHash
 
+private fun copyFunctionAttributes(source: LLVMValueRef, destination: LLVMValueRef) {
+    // TODO: consider parameter attributes
+    val attributeIndex = LLVMAttributeFunctionIndex
+    val count = LLVMGetAttributeCountAtIndex(source, attributeIndex)
+    memScoped {
+        val attributes = allocArray<LLVMAttributeRefVar>(count)
+        LLVMGetAttributesAtIndex(source, attributeIndex, attributes)
+        (0 until count).forEach {
+            LLVMAddAttributeAtIndex(destination, attributeIndex, attributes[it])
+        }
+    }
+}
 
-internal class Llvm(val context: Context, val llvmModule: LLVMModuleRef) {
+internal class LlvmImportsImpl(private val context: Context) : LlvmImports {
+
+    private val usedBitcode = mutableSetOf<KonanLibrary>()
+    private val usedNativeDependencies = mutableSetOf<KonanLibrary>()
+
+    private val allLibraries by lazy { context.librariesWithDependencies.toSet() }
+
+    override fun add(origin: CompiledKonanModuleOrigin, onlyBitcode: Boolean) {
+        val library = when (origin) {
+            CurrentKonanModuleOrigin -> return
+            is DeserializedKonanModuleOrigin -> origin.library
+        }
+
+        if (library !in allLibraries) {
+            error("Library (${library.libraryName}) is used but not requested.\nRequested libraries: ${allLibraries.joinToString { it.libraryName }}")
+        }
+
+        usedBitcode.add(library)
+        if (!onlyBitcode) {
+            usedNativeDependencies.add(library)
+        }
+    }
+
+    override fun bitcodeIsUsed(library: KonanLibrary) = library in usedBitcode
+
+    override fun nativeDependenciesAreUsed(library: KonanLibrary) = library in usedNativeDependencies
+}
+
+internal class GlobalLlvm(val context: Context) {
+    val llvmInt8 = LLVMInt8Type()!!
+    val llvmInt16 = LLVMInt16Type()!!
+    val llvmInt32 = LLVMInt32Type()!!
+    val llvmInt64 = LLVMInt64Type()!!
+    val llvmFloat = LLVMFloatType()!!
+    val llvmDouble = LLVMDoubleType()!!
+
+    private val target = context.config.target
+
+    val personalityFunctionName = when (target) {
+        KonanTarget.IOS_ARM32 -> "__gxx_personality_sj0"
+        KonanTarget.MINGW_X64 -> "__gxx_personality_seh0"
+        else -> "__gxx_personality_v0"
+    }
+
+    val staticData = StaticData(context)
+
+    private val runtimeFile = context.config.distribution.runtime(target)
+    val runtime = Runtime(runtimeFile) // TODO: dispose
+
+    val tlsMode by lazy {
+        when (target) {
+            KonanTarget.WASM32,
+            is KonanTarget.ZEPHYR -> LLVMThreadLocalMode.LLVMNotThreadLocal
+            else -> LLVMThreadLocalMode.LLVMGeneralDynamicTLSModel
+        }
+    }
+
+    val imports get() = LlvmImportsImpl(context)
+
+    val nativeDependenciesToLink: List<KonanLibrary> by lazy {
+        context.config.resolvedLibraries
+                .getFullList(TopologicalLibraryOrder)
+                .filter { (!it.isDefault && !context.config.purgeUserLibs) || imports.nativeDependenciesAreUsed(it) }
+
+    }
+
+    val bitcodeToLink: List<KonanLibrary> by lazy {
+        context.config.resolvedLibraries
+                .getFullList(TopologicalLibraryOrder)
+                .filter { (!it.isDefault && !context.config.purgeUserLibs) || imports.bitcodeIsUsed(it) }
+    }
+
+    val additionalProducedBitcodeFiles = mutableListOf<String>()
+
+    val usedFunctions = mutableListOf<LLVMValueRef>()
+    val usedGlobals = mutableListOf<LLVMValueRef>()
+    val compilerUsedGlobals = mutableListOf<LLVMValueRef>()
+    val staticInitializers = mutableListOf<LLVMValueRef>()
+    val fileInitializers = mutableListOf<IrField>()
+    val objects = mutableSetOf<LLVMValueRef>()
+    val sharedObjects = mutableSetOf<LLVMValueRef>()
+}
+
+internal class Llvm(context: Context, val llvmModule: LLVMModuleRef) {
+
+    val globalLlvm = GlobalLlvm(context)
 
     private fun importFunction(name: String, otherModule: LLVMModuleRef): LLVMValueRef {
         if (LLVMGetNamedFunction(llvmModule, name) != null) {
@@ -269,41 +366,10 @@ internal class Llvm(val context: Context, val llvmModule: LLVMModuleRef) {
         return function
     }
 
-    private fun importGlobal(name: String, otherModule: LLVMModuleRef): LLVMValueRef {
-        if (LLVMGetNamedGlobal(llvmModule, name) != null) {
-            throw IllegalArgumentException("global $name already exists")
-        }
-
-        val externalGlobal = LLVMGetNamedGlobal(otherModule, name)!!
-        val globalType = getGlobalType(externalGlobal)
-        val global = LLVMAddGlobal(llvmModule, globalType, name)!!
-
-        return global
-    }
-
-    private fun copyFunctionAttributes(source: LLVMValueRef, destination: LLVMValueRef) {
-        // TODO: consider parameter attributes
-        val attributeIndex = LLVMAttributeFunctionIndex
-        val count = LLVMGetAttributeCountAtIndex(source, attributeIndex)
-        memScoped {
-            val attributes = allocArray<LLVMAttributeRefVar>(count)
-            LLVMGetAttributesAtIndex(source, attributeIndex, attributes)
-            (0 until count).forEach {
-                LLVMAddAttributeAtIndex(destination, attributeIndex, attributes[it])
-            }
-        }
-    }
-
     private fun importMemset(): LLVMValueRef {
         val parameterTypes = cValuesOf(int8TypePtr, int8Type, int32Type, int32Type, int1Type)
         val functionType = LLVMFunctionType(LLVMVoidType(), parameterTypes, 5, 0)
         return LLVMAddFunction(llvmModule, "llvm.memset.p0i8.i32", functionType)!!
-    }
-
-    private fun importMemcpy(): LLVMValueRef {
-        val parameterTypes = cValuesOf(int8TypePtr, int8TypePtr, int32Type, int1Type)
-        val functionType = LLVMFunctionType(LLVMVoidType(), parameterTypes, 4, 0)
-        return LLVMAddFunction(llvmModule, "llvm.memcpy.p0i8.p0i8.i32", functionType)!!
     }
 
     private fun llvmIntrinsic(name: String, type: LLVMTypeRef, vararg attributes: String): LLVMValueRef {
@@ -322,7 +388,7 @@ internal class Llvm(val context: Context, val llvmModule: LLVMModuleRef) {
             origin: CompiledKonanModuleOrigin,
             independent: Boolean = false
     ): LLVMValueRef {
-        this.imports.add(origin, onlyBitcode = independent)
+        this.globalLlvm.imports.add(origin, onlyBitcode = independent)
 
         val found = LLVMGetNamedFunction(llvmModule, name)
         if (found != null) {
@@ -357,68 +423,14 @@ internal class Llvm(val context: Context, val llvmModule: LLVMModuleRef) {
         return function
     }
 
-    val imports get() = context.llvmImports
-
-    class ImportsImpl(private val context: Context) : LlvmImports {
-
-        private val usedBitcode = mutableSetOf<KonanLibrary>()
-        private val usedNativeDependencies = mutableSetOf<KonanLibrary>()
-
-        private val allLibraries by lazy { context.librariesWithDependencies.toSet() }
-
-        override fun add(origin: CompiledKonanModuleOrigin, onlyBitcode: Boolean) {
-            val library = when (origin) {
-                CurrentKonanModuleOrigin -> return
-                is DeserializedKonanModuleOrigin -> origin.library
-            }
-
-            if (library !in allLibraries) {
-                error("Library (${library.libraryName}) is used but not requested.\nRequested libraries: ${allLibraries.joinToString { it.libraryName }}")
-            }
-
-            usedBitcode.add(library)
-            if (!onlyBitcode) {
-                usedNativeDependencies.add(library)
-            }
-        }
-
-        override fun bitcodeIsUsed(library: KonanLibrary) = library in usedBitcode
-
-        override fun nativeDependenciesAreUsed(library: KonanLibrary) = library in usedNativeDependencies
-    }
-
-    val nativeDependenciesToLink: List<KonanLibrary> by lazy {
-        context.config.resolvedLibraries
-                .getFullList(TopologicalLibraryOrder)
-                .filter { (!it.isDefault && !context.config.purgeUserLibs) || imports.nativeDependenciesAreUsed(it) }
-
-    }
-
-    val bitcodeToLink: List<KonanLibrary> by lazy {
-        context.config.resolvedLibraries
-                .getFullList(TopologicalLibraryOrder)
-                .filter { (!it.isDefault && !context.config.purgeUserLibs) || imports.bitcodeIsUsed(it) }
-    }
-
-    val additionalProducedBitcodeFiles = mutableListOf<String>()
-
-    val staticData = StaticData(context)
-
-    private val target = context.config.target
-
-    val runtimeFile = context.config.distribution.runtime(target)
-    val runtime = Runtime(runtimeFile) // TODO: dispose
-
-    val targetTriple = runtime.target
+    val staticData = globalLlvm.staticData
 
     init {
-        LLVMSetDataLayout(llvmModule, runtime.dataLayout)
-        LLVMSetTarget(llvmModule, targetTriple)
+        LLVMSetDataLayout(llvmModule, globalLlvm.runtime.dataLayout)
+        LLVMSetTarget(llvmModule, globalLlvm.runtime.target)
     }
 
-    private fun importRtFunction(name: String) = importFunction(name, runtime.llvmModule)
-
-    private fun importRtGlobal(name: String) = importGlobal(name, runtime.llvmModule)
+    private fun importRtFunction(name: String) = importFunction(name, globalLlvm.runtime.llvmModule)
 
     val allocInstanceFunction = importRtFunction("AllocInstance")
     val allocArrayFunction = importRtFunction("AllocArrayInstance")
@@ -462,20 +474,6 @@ internal class Llvm(val context: Context, val llvmModule: LLVMModuleRef) {
     val Kotlin_ObjCExport_RethrowNSErrorAsException by lazyRtFunction
     val Kotlin_ObjCExport_AllocInstanceWithAssociatedObject by lazyRtFunction
 
-    val tlsMode by lazy {
-        when (target) {
-            KonanTarget.WASM32,
-            is KonanTarget.ZEPHYR -> LLVMThreadLocalMode.LLVMNotThreadLocal
-            else -> LLVMThreadLocalMode.LLVMGeneralDynamicTLSModel
-        }
-    }
-
-    private val personalityFunctionName = when (target) {
-        KonanTarget.IOS_ARM32 -> "__gxx_personality_sj0"
-        KonanTarget.MINGW_X64 -> "__gxx_personality_seh0"
-        else -> "__gxx_personality_v0"
-    }
-
     val cxxStdTerminate = externalNounwindFunction(
             "_ZSt9terminatev", // mangled C++ 'std::terminate'
             functionType(voidType, false),
@@ -483,7 +481,7 @@ internal class Llvm(val context: Context, val llvmModule: LLVMModuleRef) {
     )
 
     val gxxPersonalityFunction = externalNounwindFunction(
-            personalityFunctionName,
+            globalLlvm.personalityFunctionName,
             functionType(int32Type, true),
             origin = context.standardLlvmSymbolsOrigin
     )
@@ -499,7 +497,6 @@ internal class Llvm(val context: Context, val llvmModule: LLVMModuleRef) {
     )
 
     val memsetFunction = importMemset()
-    //val memcpyFunction = importMemcpy()
 
     val llvmTrap = llvmIntrinsic(
             "llvm.trap",
@@ -513,14 +510,6 @@ internal class Llvm(val context: Context, val llvmModule: LLVMModuleRef) {
             "nounwind", "readnone"
     )
 
-    val usedFunctions = mutableListOf<LLVMValueRef>()
-    val usedGlobals = mutableListOf<LLVMValueRef>()
-    val compilerUsedGlobals = mutableListOf<LLVMValueRef>()
-    val staticInitializers = mutableListOf<LLVMValueRef>()
-    val fileInitializers = mutableListOf<IrField>()
-    val objects = mutableSetOf<LLVMValueRef>()
-    val sharedObjects = mutableSetOf<LLVMValueRef>()
-
     private object lazyRtFunction {
         operator fun provideDelegate(
                 thisRef: Llvm, property: KProperty<*>
@@ -531,10 +520,4 @@ internal class Llvm(val context: Context, val llvmModule: LLVMModuleRef) {
             override fun getValue(thisRef: Llvm, property: KProperty<*>): LLVMValueRef = value
         }
     }
-    val llvmInt8 = LLVMInt8Type()!!
-    val llvmInt16 = LLVMInt16Type()!!
-    val llvmInt32 = LLVMInt32Type()!!
-    val llvmInt64 = LLVMInt64Type()!!
-    val llvmFloat = LLVMFloatType()!!
-    val llvmDouble = LLVMDoubleType()!!
 }

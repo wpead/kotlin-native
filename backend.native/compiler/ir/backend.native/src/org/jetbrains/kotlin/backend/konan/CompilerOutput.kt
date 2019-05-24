@@ -9,7 +9,6 @@ import llvm.LLVMModuleRef
 import llvm.LLVMWriteBitcodeToFile
 import org.jetbrains.kotlin.backend.konan.library.impl.buildLibrary
 import org.jetbrains.kotlin.backend.konan.llvm.*
-import org.jetbrains.kotlin.backend.konan.llvm.Llvm
 import org.jetbrains.kotlin.konan.CURRENT
 import org.jetbrains.kotlin.konan.KonanAbiVersion
 import org.jetbrains.kotlin.konan.KonanVersion
@@ -24,21 +23,19 @@ val CompilerOutputKind.isNativeBinary: Boolean get() = when (this) {
     CompilerOutputKind.LIBRARY, CompilerOutputKind.BITCODE -> false
 }
 
-internal fun produceCStubs(context: Context) {
-    val llvmModule = context.llvmModule!!
+internal fun produceCStubs(context: Context, llvmModule: LLVMModuleRef) {
     context.cStubsManager.compile(context.config.clang, context.messageCollector, context.inVerbosePhase)?.let {
         parseAndLinkBitcodeFile(llvmModule, it.absolutePath)
     }
 }
 
-private fun linkAllDependecies(context: Context, generatedBitcodeFiles: List<String>) {
+private fun linkAllDependecies(context: Context, llvmModule: LLVMModuleRef, generatedBitcodeFiles: List<String>) {
 
     val nativeLibraries = context.config.nativeLibraries + context.config.defaultNativeLibraries
-    val bitcodeLibraries = context.llvm.bitcodeToLink.map { it.bitcodePaths }.flatten().filter { it.isBitcode }
-    val additionalBitcodeFilesToLink = context.llvm.additionalProducedBitcodeFiles
+    val bitcodeLibraries = context.globalLlvm.bitcodeToLink.map { it.bitcodePaths }.flatten().filter { it.isBitcode }
+    val additionalBitcodeFilesToLink = context.globalLlvm.additionalProducedBitcodeFiles
     val bitcodeFiles = (nativeLibraries + generatedBitcodeFiles + additionalBitcodeFilesToLink + bitcodeLibraries).toSet()
 
-    val llvmModule = context.llvmModule!!
     bitcodeFiles.forEach {
         parseAndLinkBitcodeFile(llvmModule, it)
     }
@@ -51,9 +48,9 @@ private fun shoudRunClosedWorldCleanUp(context: Context) =
         // GlobalDCE will kill coverage-related globals.
         !context.coverage.enabled
 
-private fun runLlvmPipeline(context: Context) = when {
-    shouldOptimizeWithLlvmApi(context) -> runLlvmOptimizationPipeline(context)
-    shoudRunClosedWorldCleanUp(context) -> runClosedWorldCleanup(context)
+private fun runLlvmPipeline(context: Context, llvmModule: LLVMModuleRef) = when {
+    shouldOptimizeWithLlvmApi(context) -> runLlvmOptimizationPipeline(context, llvmModule)
+    shoudRunClosedWorldCleanUp(context) -> runClosedWorldCleanup(context, llvmModule)
     else -> {}
 }
 
@@ -68,6 +65,7 @@ internal fun produceOutput(context: Context) {
         CompilerOutputKind.DYNAMIC,
         CompilerOutputKind.FRAMEWORK,
         CompilerOutputKind.PROGRAM -> {
+            val llvmModule = context.composer.getModules().first()
             val output = tempFiles.nativeBinaryFileName
             context.bitcodeFileName = output
             val generatedBitcodeFiles =
@@ -79,11 +77,11 @@ internal fun produceOutput(context: Context) {
                     listOf(tempFiles.cAdapterBitcodeName)
                 } else emptyList()
             if (produce == CompilerOutputKind.FRAMEWORK && context.config.produceStaticFramework) {
-                embedAppleLinkerOptionsToBitcode(context.llvm, context.config)
+                embedAppleLinkerOptionsToBitcode(context)
             }
-            linkAllDependecies(context, generatedBitcodeFiles)
-            runLlvmPipeline(context)
-            LLVMWriteBitcodeToFile(context.llvmModule!!, output)
+            linkAllDependecies(context, llvmModule, generatedBitcodeFiles)
+            runLlvmPipeline(context, llvmModule)
+            LLVMWriteBitcodeToFile(llvmModule, output)
         }
         CompilerOutputKind.LIBRARY -> {
             val output = context.config.outputFiles.outputName
@@ -116,7 +114,8 @@ internal fun produceOutput(context: Context) {
         CompilerOutputKind.BITCODE -> {
             val output = context.config.outputFile
             context.bitcodeFileName = output
-            LLVMWriteBitcodeToFile(context.llvmModule!!, output)
+            val llvmModule = context.composer.getModules().first()
+            LLVMWriteBitcodeToFile(llvmModule, output)
         }
     }
 }
@@ -129,7 +128,10 @@ private fun parseAndLinkBitcodeFile(llvmModule: LLVMModuleRef, path: String) {
     }
 }
 
-private fun embedAppleLinkerOptionsToBitcode(llvm: Llvm, config: KonanConfig) {
+private fun embedAppleLinkerOptionsToBitcode(context: Context) {
+
+    val config: KonanConfig = context.config
+
     fun findEmbeddableOptions(options: List<String>): List<List<String>> {
         val result = mutableListOf<List<String>>()
         val iterator = options.iterator()
@@ -145,7 +147,7 @@ private fun embedAppleLinkerOptionsToBitcode(llvm: Llvm, config: KonanConfig) {
     }
 
     val optionsToEmbed = findEmbeddableOptions(config.platform.configurables.linkerKonanFlags) +
-            llvm.nativeDependenciesToLink.flatMap { findEmbeddableOptions(it.linkerOpts) }
+            context.globalLlvm.nativeDependenciesToLink.flatMap { findEmbeddableOptions(it.linkerOpts) }
 
-    embedLlvmLinkOptions(llvm.llvmModule, optionsToEmbed)
+    embedLlvmLinkOptions(context.composer.getGlobalLlvmModule(), optionsToEmbed)
 }

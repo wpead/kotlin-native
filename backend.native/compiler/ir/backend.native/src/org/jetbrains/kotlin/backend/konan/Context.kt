@@ -5,7 +5,6 @@
 
 package org.jetbrains.kotlin.backend.konan
 
-import llvm.LLVMDumpModule
 import llvm.LLVMModuleRef
 import org.jetbrains.kotlin.backend.common.DumpIrTreeWithDescriptorsVisitor
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedSimpleFunctionDescriptor
@@ -306,28 +305,21 @@ internal class Context(config: KonanConfig) : KonanBackendContext(config) {
         InteropBuiltIns(this.builtIns)
     }
 
-    var llvmModule: LLVMModuleRef? = null
-        set(module) {
-            if (field != null) {
-                throw Error("Another LLVMModule in the context.")
-            }
-            field = module!!
+    val composer = LlvmModuleComposer(this)
 
-            llvm = Llvm(this, module)
-            debugInfo = DebugInfo(this)
-        }
+    var llvmModule: LLVMModuleRef?
+        set(value) { composer.llvmModule = value }
+        get() = composer.llvmModule
 
     lateinit var llvm: Llvm
-    val llvmImports: LlvmImports = Llvm.ImportsImpl(this)
+    lateinit var globalLlvm: GlobalLlvm
+    lateinit var debugInfo: DebugInfo
     lateinit var llvmDeclarations: LlvmDeclarations
     lateinit var bitcodeFileName: String
 
     val cStubsManager = CStubsManager(config.target)
 
     val coverage = CoverageManager(this)
-
-    // Cache used for source offset->(line,column) mapping.
-    val fileEntryCache = mutableMapOf<String, SourceManager.FileEntry>()
 
     protected fun separator(title: String) {
         println("\n\n--- ${title} ----------------------\n")
@@ -400,14 +392,14 @@ internal class Context(config: KonanConfig) : KonanBackendContext(config) {
     }
 
     fun verifyBitCode() {
-        if (llvmModule == null) return
-        verifyModule(llvmModule!!)
+//        if (llvmModule == null) return
+//        verifyModule(llvmModule!!)
     }
 
     fun printBitCode() {
-        if (llvmModule == null) return
-        separator("BitCode:")
-        LLVMDumpModule(llvmModule!!)
+//        if (llvmModule == null) return
+//        separator("BitCode:")
+//        LLVMDumpModule(llvmModule!!)
     }
 
     fun verify() {
@@ -452,7 +444,6 @@ internal class Context(config: KonanConfig) : KonanBackendContext(config) {
         }
     }
 
-    lateinit var debugInfo: DebugInfo
     var moduleDFG: ModuleDFG? = null
     var externalModulesDFG: ExternalModulesDFG? = null
     lateinit var lifetimes: MutableMap<IrElement, Lifetime>

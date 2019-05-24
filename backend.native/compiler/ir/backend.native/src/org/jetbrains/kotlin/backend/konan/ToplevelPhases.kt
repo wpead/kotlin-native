@@ -274,7 +274,7 @@ internal val dependenciesLowerPhase = SameTypeNamedPhaseWrapper(
                             input.files.clear()
                         }
 
-                // Save all files for codegen in reverse topological order.
+                // Save all files for globalCodegen in reverse topological order.
                 // This guarantees that libraries initializers are emitted in correct order.
                 context.librariesWithDependencies
                         .forEach {
