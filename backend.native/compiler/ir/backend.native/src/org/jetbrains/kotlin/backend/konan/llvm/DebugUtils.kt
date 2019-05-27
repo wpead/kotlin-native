@@ -62,6 +62,10 @@ internal object DWARF {
 fun KonanConfig.debugInfoVersion():Int = configuration[KonanConfigKeys.DEBUG_INFO_VERSION] ?: 1
 
 internal class DebugInfo internal constructor(override val context: Context):ContextUtils {
+
+    override val llvmModule: LLVMModuleRef
+        get() = TODO("not implemented")
+
     val files = mutableMapOf<String, DIFileRef>()
     val subprograms = mutableMapOf<LLVMValueRef, DISubprogramRef>()
     /* Some functions are inlined on all callsites and body is eliminated by DCE, so there's no LLVM value */

@@ -7,17 +7,31 @@ package org.jetbrains.kotlin.backend.konan.llvm
 
 import llvm.*
 import org.jetbrains.kotlin.backend.konan.Context
+import org.jetbrains.kotlin.backend.konan.llvm.StaticData.Global
+import org.jetbrains.kotlin.ir.declarations.IrDeclaration
+import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.expressions.IrConst
+import org.jetbrains.kotlin.ir.util.file
 
 /**
  * Provides utilities to create static data.
  */
-internal class StaticData(override val context: Context): ContextUtils {
+internal class StaticData(
+        val irFile: IrFile,
+        override val context: Context,
+        override val llvm: Llvm,
+        override val llvmDeclarations: LlvmDeclarations
+): LlvmDeclarationsAware {
+
+    override val llvmModule: LLVMModuleRef = llvm.llvmModule
+
+    override fun isExternal(declaration: IrDeclaration): Boolean =
+            declaration.file != irFile
 
     /**
      * Represents the LLVM global variable.
      */
-    class Global private constructor(val staticData: StaticData, val llvmGlobal: LLVMValueRef) {
+    class Global private constructor(val llvmTargetData: LLVMTargetDataRef, val llvmGlobal: LLVMValueRef) {
         companion object {
 
             private fun createLlvmGlobal(module: LLVMModuleRef,
@@ -40,16 +54,15 @@ internal class StaticData(override val context: Context): ContextUtils {
                 return llvmGlobal
             }
 
-            fun create(staticData: StaticData, type: LLVMTypeRef, name: String, isExported: Boolean): Global {
-                val module = staticData.context.llvmModule
+            fun create(contextUtils: ContextUtils, type: LLVMTypeRef, name: String, isExported: Boolean): Global {
 
                 val isUnnamed = (name == "") // LLVM will select the unique index and represent the global as `@idx`.
                 if (isUnnamed && isExported) {
                     throw IllegalArgumentException("unnamed global can't be exported")
                 }
 
-                val llvmGlobal = createLlvmGlobal(module!!, type, name, isExported)
-                return Global(staticData, llvmGlobal)
+                val llvmGlobal = createLlvmGlobal(contextUtils.llvmModule, type, name, isExported)
+                return Global(contextUtils.llvmTargetData, llvmGlobal)
             }
         }
 
@@ -90,14 +103,14 @@ internal class StaticData(override val context: Context): ContextUtils {
      */
     class Pointer private constructor(val global: Global,
                                       private val delegate: ConstPointer,
-                                      val offsetInGlobal: Long) : ConstPointer by delegate {
+                                      private val offsetInGlobal: Long) : ConstPointer by delegate {
 
         companion object {
             fun to(global: Global) = Pointer(global, constPointer(global.llvmGlobal), 0L)
         }
 
         private fun getElementOffset(index: Int): Long {
-            val llvmTargetData = global.staticData.llvmTargetData
+            val llvmTargetData = global.llvmTargetData
             val type = LLVMGetElementType(delegate.llvmType)
             return when (LLVMGetTypeKind(type)) {
                 LLVMTypeKind.LLVMStructTypeKind -> LLVMOffsetOfElement(llvmTargetData, type, index)
@@ -109,42 +122,6 @@ internal class StaticData(override val context: Context): ContextUtils {
         override fun getElementPtr(index: Int): Pointer {
             return Pointer(global, delegate.getElementPtr(index), offsetInGlobal + this.getElementOffset(index))
         }
-
-        /**
-         * @return the distance from other pointer to this.
-         *
-         * @throws UnsupportedOperationException if it is not possible to represent the distance as [Int] value
-         */
-        fun sub(other: Pointer): Int {
-            if (this.global != other.global) {
-                throw UnsupportedOperationException("pointers must belong to the same global")
-            }
-
-            val res = this.offsetInGlobal - other.offsetInGlobal
-            if (res.toInt().toLong() != res) {
-                throw UnsupportedOperationException("result doesn't fit into Int")
-            }
-
-            return res.toInt()
-        }
-    }
-
-    /**
-     * Creates [Global] with given type and name.
-     *
-     * It is external until explicitly initialized with [Global.setInitializer].
-     */
-    fun createGlobal(type: LLVMTypeRef, name: String, isExported: Boolean = false): Global {
-        return Global.create(this, type, name, isExported)
-    }
-
-    /**
-     * Creates [Global] with given name and value.
-     */
-    fun placeGlobal(name: String, initializer: ConstValue, isExported: Boolean = false): Global {
-        val global = createGlobal(initializer.llvmType, name, isExported)
-        global.setInitializer(initializer)
-        return global
     }
 
     /**
@@ -163,6 +140,18 @@ internal class StaticData(override val context: Context): ContextUtils {
     fun cStringLiteral(value: String) =
             cStringLiterals.getOrPut(value) { placeCStringLiteral(value) }
 
+    private fun createKotlinStringLiteral(value: String): ConstPointer {
+        val name = "kstr:" + value.globalHashBase64
+        val elements = value.toCharArray().map(::Char16)
+
+        val objRef = createConstKotlinArray(context.ir.symbols.string.owner, elements)
+
+        val res = createAlias(name, objRef)
+        LLVMSetLinkage(res.llvm, LLVMLinkage.LLVMWeakAnyLinkage)
+
+        return res
+    }
+
     fun kotlinStringLiteral(value: String) =
         stringLiterals.getOrPut(value) { createKotlinStringLiteral(value) }
 }
@@ -175,4 +164,22 @@ internal class StaticData(override val context: Context): ContextUtils {
 internal fun StaticData.createImmutableBlob(value: IrConst<String>): LLVMValueRef {
     val args = value.value.map { Int8(it.toByte()).llvm }
     return createConstKotlinArray(context.ir.symbols.immutableBlob.owner, args)
+}
+
+/**
+ * Creates [Global] with given type and name.
+ *
+ * It is external until explicitly initialized with [Global.setInitializer].
+ */
+internal fun ContextUtils.createGlobal(type: LLVMTypeRef, name: String, isExported: Boolean = false): Global {
+    return Global.create(this, type, name, isExported)
+}
+
+/**
+ * Creates [Global] with given name and value.
+ */
+internal fun ContextUtils.placeGlobal(name: String, initializer: ConstValue, isExported: Boolean = false): Global {
+    val global = createGlobal(initializer.llvmType, name, isExported)
+    global.setInitializer(initializer)
+    return global
 }

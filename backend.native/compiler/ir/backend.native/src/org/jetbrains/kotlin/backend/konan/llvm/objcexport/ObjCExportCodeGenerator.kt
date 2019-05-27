@@ -42,9 +42,9 @@ internal class ObjCExportCodeGenerator(
     val runtime get() = codegen.runtime
     val staticData get() = codegen.staticData
 
-    val llvm = Llvm(context, context.composer.getGlobalLlvmModule())
+    val llvm = codegen.fileModuleGenerator.llvm
 
-    val rttiGenerator = RTTIGenerator(context)
+    val rttiGenerator = RTTIGenerator(context, codegen.fileModuleGenerator.llvmDeclarations, llvm, context.composer.getGlobalLlvmModule(), staticData, codegen.fileModuleGenerator.irFile)
 
     private val objcTerminate: LLVMValueRef by lazy {
         llvm.externalFunction(
@@ -136,7 +136,7 @@ internal class ObjCExportCodeGenerator(
 
     internal fun blockToKotlinFunctionConverter(bridge: BlockPointerBridge): LLVMValueRef =
             blockToKotlinFunctionConverterCache.getOrPut(bridge) {
-                generateBlockToKotlinFunctionConverter(bridge)
+                TODO("generateBlockToKotlinFunctionConverter(bridge)")
             }
 
     private fun FunctionGenerationContext.kotlinFunctionToObjCBlockPointer(
@@ -409,12 +409,12 @@ private fun ObjCExportCodeGenerator.setObjCExportTypeInfo(
                 isExported = true
         )
     } else {
-        context.llvmDeclarations.forClass(irClass).writableTypeInfoGlobal!!.also {
-            it.setLinkage(LLVMLinkage.LLVMExternalLinkage)
-        }
+//        context.llvmDeclarations.forClass(irClass).writableTypeInfoGlobal!!.also {
+//            it.setLinkage(LLVMLinkage.LLVMExternalLinkage)
+//        }
     }
 
-    global.setInitializer(writableTypeInfoValue)
+//    global.setInitializer(writableTypeInfoValue)
 }
 
 private val ObjCExportCodeGenerator.kotlinToObjCFunctionType: LLVMTypeRef

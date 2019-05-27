@@ -9,7 +9,6 @@ package org.jetbrains.kotlin.backend.konan.llvm
 import kotlinx.cinterop.*
 import llvm.*
 import org.jetbrains.kotlin.backend.konan.*
-import org.jetbrains.kotlin.backend.konan.descriptors.isInterface
 import org.jetbrains.kotlin.backend.konan.llvm.objc.*
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.ir.declarations.*
@@ -18,10 +17,20 @@ import org.jetbrains.kotlin.konan.target.*
 import org.jetbrains.kotlin.backend.konan.descriptors.resolveFakeOverride
 import org.jetbrains.kotlin.backend.konan.ir.*
 
-internal class CodeGenerator(override val context: Context, llvmModule: LLVMModuleRef) : ContextUtils {
+internal class CodeGenerator(override val context: Context, val fileModuleGenerator: FileModuleGenerator)
+    : StaticDataAware, LlvmDeclarationsAware {
 
-    private val llvm = context.llvm
-    private val globalLlvm = context.globalLlvm
+    override val llvm: Llvm
+        get() = fileModuleGenerator.llvm
+
+    override val staticData: StaticData =
+            fileModuleGenerator.staticData
+
+    override val llvmDeclarations: LlvmDeclarations
+        get() = fileModuleGenerator.llvmDeclarations
+
+    override val llvmModule: LLVMModuleRef
+        get() = fileModuleGenerator.llvmModule
 
     fun llvmFunction(function: IrFunction): LLVMValueRef = llvmFunctionOrNull(function) ?: error("no function ${function.name} in ${function.file}")
     fun llvmFunctionOrNull(function: IrFunction): LLVMValueRef? = function.llvmFunctionOrNull
@@ -30,9 +39,8 @@ internal class CodeGenerator(override val context: Context, llvmModule: LLVMModu
     // Keep in sync with OBJECT_TAG_MASK in C++.
     internal val immTypeInfoMask = LLVMConstNot(LLVMConstInt(intPtrType, 3, 0)!!)!!
 
-    // TODO: make it file-dependent
     override fun isExternal(declaration: IrDeclaration): Boolean {
-        return super.isExternal(declaration)
+        return declaration.file != fileModuleGenerator.irFile
     }
 
     //-------------------------------------------------------------------------//
@@ -52,7 +60,7 @@ internal class CodeGenerator(override val context: Context, llvmModule: LLVMModu
     fun getObjectInstanceStorage(irClass: IrClass, shared: Boolean): LLVMValueRef {
         assert (!irClass.isUnit())
         val llvmGlobal = if (!isExternal(irClass)) {
-            context.llvmDeclarations.forSingleton(irClass).instanceFieldRef
+            fileModuleGenerator.llvmDeclarations.forSingleton(irClass).instanceFieldRef
         } else {
             val llvmType = getLLVMType(irClass.defaultType)
             importGlobal(
@@ -63,9 +71,9 @@ internal class CodeGenerator(override val context: Context, llvmModule: LLVMModu
             )
         }
         if (shared)
-            globalLlvm.sharedObjects += llvmGlobal
+            fileModuleGenerator.sharedObjects += llvmGlobal
         else
-            globalLlvm.objects += llvmGlobal
+            fileModuleGenerator.objects += llvmGlobal
         return llvmGlobal
     }
 
@@ -73,7 +81,7 @@ internal class CodeGenerator(override val context: Context, llvmModule: LLVMModu
         assert (!irClass.isUnit())
         assert (irClass.objectIsShared)
         val llvmGlobal = if (!isExternal(irClass)) {
-            context.llvmDeclarations.forSingleton(irClass).instanceShadowFieldRef!!
+            fileModuleGenerator.llvmDeclarations.forSingleton(irClass).instanceShadowFieldRef!!
         } else {
             val llvmType = getLLVMType(irClass.defaultType)
             importGlobal(
@@ -83,7 +91,7 @@ internal class CodeGenerator(override val context: Context, llvmModule: LLVMModu
                     threadLocal = true
             )
         }
-        globalLlvm.objects += llvmGlobal
+        fileModuleGenerator.objects += llvmGlobal
         return llvmGlobal
     }
 
@@ -93,10 +101,10 @@ internal class CodeGenerator(override val context: Context, llvmModule: LLVMModu
     }
 
     fun generateLocationInfo(locationInfo: LocationInfo): DILocationRef? = if (locationInfo.inlinedAt != null)
-        LLVMCreateLocationInlinedAt(LLVMGetModuleContext(context.llvmModule), locationInfo.line, locationInfo.column,
+        LLVMCreateLocationInlinedAt(LLVMGetModuleContext(llvmModule), locationInfo.line, locationInfo.column,
                 locationInfo.scope, generateLocationInfo(locationInfo.inlinedAt))
     else
-        LLVMCreateLocation(LLVMGetModuleContext(context.llvmModule), locationInfo.line, locationInfo.column, locationInfo.scope)
+        LLVMCreateLocation(LLVMGetModuleContext(llvmModule), locationInfo.line, locationInfo.column, locationInfo.scope)
 
     val objCDataGenerator = when (context.config.target.family) {
         Family.IOS, Family.OSX -> ObjCDataGenerator(this)
@@ -147,7 +155,7 @@ internal inline fun generateFunction(
         name: String,
         block: FunctionGenerationContext.(FunctionGenerationContext) -> Unit
 ): LLVMValueRef {
-    val function = LLVMAddFunction(codegen.context.llvmModule, name, functionType)!!
+    val function = LLVMAddFunction(codegen.llvmModule, name, functionType)!!
     generateFunction(codegen, function, block)
     return function
 }
@@ -167,16 +175,18 @@ internal class FunctionGenerationContext(val function: LLVMValueRef,
                                          val codegen: CodeGenerator,
                                          startLocation: LocationInfo?,
                                          endLocation: LocationInfo?,
-                                         internal val irFunction: IrFunction? = null): ContextUtils {
+                                         internal val irFunction: IrFunction? = null): LlvmDeclarationsAware {
     override val context = codegen.context
 
-    private val llvmModule = if (irFunction == null) {
-        context.composer.getGlobalLlvmModule()
-    } else {
-        context.composer.getLlvmModuleForFile(irFunction.file)
-    }
+    override val llvm = codegen.fileModuleGenerator.llvm
 
-    private val llvm = context.llvm
+    override val llvmModule: LLVMModuleRef = llvm.llvmModule
+
+    override val llvmDeclarations: LlvmDeclarations = codegen.fileModuleGenerator.llvmDeclarations
+
+    override fun isExternal(declaration: IrDeclaration): Boolean {
+        return declaration.file != codegen.fileModuleGenerator.irFile
+    }
 
     val vars = VariableManager(this)
     private val basicBlockToLastLocation = mutableMapOf<LLVMBasicBlockRef, LocationInfo>()
@@ -848,7 +858,7 @@ internal class FunctionGenerationContext(val function: LLVMValueRef,
         assert(!irClass.isInterface)
 
         return if (irClass.isExternalObjCClass()) {
-            llvm.globalLlvm.imports.add(irClass.llvmSymbolOrigin)
+            context.globalLlvm.imports.add(irClass.llvmSymbolOrigin)
 
             if (irClass.isObjCMetaClass()) {
                 val name = irClass.descriptor.getExternalObjCMetaClassBinaryName()
@@ -870,7 +880,7 @@ internal class FunctionGenerationContext(val function: LLVMValueRef,
                 error("type-checking against Kotlin classes inheriting Objective-C meta-classes isn't supported yet")
             }
 
-            val objCDeclarations = context.llvmDeclarations.forClass(irClass).objCDeclarations!!
+            val objCDeclarations = codegen.fileModuleGenerator.llvmDeclarations.forClass(irClass).objCDeclarations!!
             val classPointerGlobal = objCDeclarations.classPointerGlobal.llvmGlobal
 
             val storedClass = this.load(classPointerGlobal)

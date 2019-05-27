@@ -124,50 +124,34 @@ internal sealed class Lifetime(val slotType: SlotType) {
     }
 }
 
-/**
- * Provides utility methods to the implementer.
- */
-internal interface ContextUtils : RuntimeAware {
-    val context: Context
+internal interface LlvmDeclarationsAware: ContextUtils {
+    val llvmDeclarations: LlvmDeclarations
 
-    override val runtime: Runtime
-        get() = context.globalLlvm.runtime
+    val llvm: Llvm
 
-    /**
-     * Describes the target platform.
-     *
-     * TODO: using [llvmTargetData] usually results in generating non-portable bitcode.
-     */
-    val llvmTargetData: LLVMTargetDataRef
-        get() = runtime.targetData
-
-    val staticData: StaticData
-        get() = context.llvm.staticData
 
     /**
      * TODO: maybe it'd be better to replace with [IrDeclaration::isEffectivelyExternal()],
      * or just drop all [else] branches of corresponding conditionals.
      */
-    fun isExternal(declaration: IrDeclaration): Boolean {
-        return false
-    }
+    fun isExternal(declaration: IrDeclaration): Boolean
 
     /**
      * LLVM function generated from the Kotlin function.
      * It may be declared as external function prototype.
      */
     val IrFunction.llvmFunction: LLVMValueRef
-    get() = llvmFunctionOrNull ?: error("$name in $file/${parent.fqNameSafe}")
+        get() = llvmFunctionOrNull ?: error("$name in $file/${parent.fqNameSafe}")
 
     val IrFunction.llvmFunctionOrNull: LLVMValueRef?
         get() {
             assert(this.isReal)
 
             return if (isExternal(this)) {
-                context.llvm.externalFunction(this.symbolName, getLlvmFunctionType(this),
+                llvm.externalFunction(this.symbolName, getLlvmFunctionType(this),
                         origin = this.llvmSymbolOrigin)
             } else {
-                context.llvmDeclarations.forFunctionOrNull(this)?.llvmFunction
+                llvmDeclarations.forFunctionOrNull(this)?.llvmFunction
             }
         }
 
@@ -186,7 +170,7 @@ internal interface ContextUtils : RuntimeAware {
                 constPointer(importGlobal(this.typeInfoSymbolName, runtime.typeInfoType,
                         origin = this.llvmSymbolOrigin))
             } else {
-                context.llvmDeclarations.forClass(this).typeInfo
+                llvmDeclarations.forClass(this).typeInfo
             }
         }
 
@@ -196,6 +180,30 @@ internal interface ContextUtils : RuntimeAware {
      */
     val IrClass.llvmTypeInfoPtr: LLVMValueRef
         get() = typeInfoPtr.llvm
+}
+
+internal interface StaticDataAware {
+    val staticData: StaticData
+}
+
+/**
+ * Provides utility methods to the implementer.
+ */
+internal interface ContextUtils : RuntimeAware {
+    val context: Context
+
+    override val runtime: Runtime
+        get() = context.globalLlvm.runtime
+
+    val llvmModule: LLVMModuleRef
+
+    /**
+     * Describes the target platform.
+     *
+     * TODO: using [llvmTargetData] usually results in generating non-portable bitcode.
+     */
+    val llvmTargetData: LLVMTargetDataRef
+        get() = runtime.targetData
 
     /**
      * Returns contents of this [GlobalHash].
@@ -308,8 +316,6 @@ internal class GlobalLlvm(val context: Context) {
         else -> "__gxx_personality_v0"
     }
 
-    val staticData = StaticData(context)
-
     private val runtimeFile = context.config.distribution.runtime(target)
     val runtime = Runtime(runtimeFile) // TODO: dispose
 
@@ -347,9 +353,14 @@ internal class GlobalLlvm(val context: Context) {
     val sharedObjects = mutableSetOf<LLVMValueRef>()
 }
 
-internal class Llvm(context: Context, val llvmModule: LLVMModuleRef) {
+internal class Llvm(
+        private val context: Context,
+        val llvmModule: LLVMModuleRef) {
 
-    val globalLlvm = GlobalLlvm(context)
+    init {
+        LLVMSetDataLayout(llvmModule, context.globalLlvm.runtime.dataLayout)
+        LLVMSetTarget(llvmModule, context.globalLlvm.runtime.target)
+    }
 
     private fun importFunction(name: String, otherModule: LLVMModuleRef): LLVMValueRef {
         if (LLVMGetNamedFunction(llvmModule, name) != null) {
@@ -388,7 +399,7 @@ internal class Llvm(context: Context, val llvmModule: LLVMModuleRef) {
             origin: CompiledKonanModuleOrigin,
             independent: Boolean = false
     ): LLVMValueRef {
-        this.globalLlvm.imports.add(origin, onlyBitcode = independent)
+        context.globalLlvm.imports.add(origin, onlyBitcode = independent)
 
         val found = LLVMGetNamedFunction(llvmModule, name)
         if (found != null) {
@@ -423,14 +434,7 @@ internal class Llvm(context: Context, val llvmModule: LLVMModuleRef) {
         return function
     }
 
-    val staticData = globalLlvm.staticData
-
-    init {
-        LLVMSetDataLayout(llvmModule, globalLlvm.runtime.dataLayout)
-        LLVMSetTarget(llvmModule, globalLlvm.runtime.target)
-    }
-
-    private fun importRtFunction(name: String) = importFunction(name, globalLlvm.runtime.llvmModule)
+    private fun importRtFunction(name: String) = importFunction(name, context.globalLlvm.runtime.llvmModule)
 
     val allocInstanceFunction = importRtFunction("AllocInstance")
     val allocArrayFunction = importRtFunction("AllocArrayInstance")
@@ -481,7 +485,7 @@ internal class Llvm(context: Context, val llvmModule: LLVMModuleRef) {
     )
 
     val gxxPersonalityFunction = externalNounwindFunction(
-            globalLlvm.personalityFunctionName,
+            context.globalLlvm.personalityFunctionName,
             functionType(int32Type, true),
             origin = context.standardLlvmSymbolsOrigin
     )

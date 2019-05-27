@@ -12,96 +12,6 @@ import org.jetbrains.kotlin.descriptors.konan.CurrentKonanModuleOrigin
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.util.OperatorNameConventions
 
-internal fun ObjCExportCodeGenerator.generateBlockToKotlinFunctionConverter(
-        bridge: BlockPointerBridge
-): LLVMValueRef {
-    val irInterface = symbols.functions[bridge.numberOfParameters].owner
-    val invokeMethod = irInterface.declarations.filterIsInstance<IrSimpleFunction>()
-            .single { it.name == OperatorNameConventions.INVOKE }
-
-    // Note: we can store Objective-C block pointer as associated object of Kotlin function object itself,
-    // but only if it is equivalent to its dynamic translation result. If block returns void, then it's not like that:
-    val useSeparateHolder = bridge.returnsVoid
-
-    val bodyType = if (useSeparateHolder) {
-        structType(codegen.kObjHeader, codegen.kObjHeaderPtr)
-    } else {
-        structType(codegen.kObjHeader)
-    }
-
-    val invokeImpl = generateFunction(
-            codegen,
-            codegen.getLlvmFunctionType(invokeMethod),
-            "invokeFunction${bridge.nameSuffix}"
-    ) {
-        val args = (0 until bridge.numberOfParameters).map { index ->
-            kotlinReferenceToObjC(param(index + 1))
-        }
-
-        val thisRef = param(0)
-        val associatedObjectHolder = if (useSeparateHolder) {
-            val bodyPtr = bitcast(pointerType(bodyType), thisRef)
-            loadSlot(structGep(bodyPtr, 1), isVar = false)
-        } else {
-            thisRef
-        }
-        val blockPtr = callFromBridge(
-                context.llvm.Kotlin_ObjCExport_GetAssociatedObject,
-                listOf(associatedObjectHolder)
-        )
-
-        val invoke = loadBlockInvoke(blockPtr, bridge)
-        val result = callFromBridge(invoke, listOf(blockPtr) + args)
-
-        val kotlinResult = if (bridge.returnsVoid) {
-            theUnitInstanceRef.llvm
-        } else {
-            objCReferenceToKotlin(result, Lifetime.RETURN_VALUE)
-        }
-        ret(kotlinResult)
-    }.also {
-        LLVMSetLinkage(it, LLVMLinkage.LLVMInternalLinkage)
-    }
-
-    val typeInfo = rttiGenerator.generateSyntheticInterfaceImpl(
-            irInterface,
-            mapOf(invokeMethod to constPointer(invokeImpl)),
-            bodyType,
-            immutable = true
-    )
-
-    return generateFunction(
-            codegen,
-            functionType(codegen.kObjHeaderPtr, false, int8TypePtr, codegen.kObjHeaderPtrPtr),
-            ""
-    ) {
-        val blockPtr = param(0)
-        ifThen(icmpEq(blockPtr, kNullInt8Ptr)) {
-            ret(kNullObjHeaderPtr)
-        }
-
-        val retainedBlockPtr = callFromBridge(retainBlock, listOf(blockPtr))
-
-        val result = if (useSeparateHolder) {
-            val result = allocInstance(typeInfo.llvm, Lifetime.RETURN_VALUE)
-            val bodyPtr = bitcast(pointerType(bodyType), result)
-            val holder = allocInstanceWithAssociatedObject(
-                    symbols.interopForeignObjCObject.owner.typeInfoPtr,
-                    retainedBlockPtr,
-                    Lifetime.ARGUMENT
-            )
-            storeHeapRef(holder, structGep(bodyPtr, 1))
-            result
-        } else {
-            allocInstanceWithAssociatedObject(typeInfo, retainedBlockPtr, Lifetime.RETURN_VALUE)
-        }
-
-        ret(result)
-    }.also {
-        LLVMSetLinkage(it, LLVMLinkage.LLVMInternalLinkage)
-    }
-}
-
 private fun FunctionGenerationContext.loadBlockInvoke(
         blockPtr: LLVMValueRef,
         bridge: BlockPointerBridge
@@ -112,15 +22,105 @@ private fun FunctionGenerationContext.loadBlockInvoke(
     return bitcast(pointerType(bridge.blockInvokeLlvmType), load(invokePtr))
 }
 
-private fun FunctionGenerationContext.allocInstanceWithAssociatedObject(
-        typeInfo: ConstPointer,
-        associatedObject: LLVMValueRef,
-        resultLifetime: Lifetime
-): LLVMValueRef = call(
-        context.llvm.Kotlin_ObjCExport_AllocInstanceWithAssociatedObject,
-        listOf(typeInfo.llvm, associatedObject),
-        resultLifetime
-)
+//internal fun ObjCExportCodeGenerator.generateBlockToKotlinFunctionConverter(
+//        bridge: BlockPointerBridge
+//): LLVMValueRef {
+//    val irInterface = symbols.functions[bridge.numberOfParameters].owner
+//    val invokeMethod = irInterface.declarations.filterIsInstance<IrSimpleFunction>()
+//            .single { it.name == OperatorNameConventions.INVOKE }
+//
+//    // Note: we can store Objective-C block pointer as associated object of Kotlin function object itself,
+//    // but only if it is equivalent to its dynamic translation result. If block returns void, then it's not like that:
+//    val useSeparateHolder = bridge.returnsVoid
+//
+//    val bodyType = if (useSeparateHolder) {
+//        structType(codegen.kObjHeader, codegen.kObjHeaderPtr)
+//    } else {
+//        structType(codegen.kObjHeader)
+//    }
+//
+//    val invokeImpl = generateFunction(
+//            codegen,
+//            codegen.getLlvmFunctionType(invokeMethod),
+//            "invokeFunction${bridge.nameSuffix}"
+//    ) {
+//        val args = (0 until bridge.numberOfParameters).map { index ->
+//            kotlinReferenceToObjC(param(index + 1))
+//        }
+//
+//        val thisRef = param(0)
+//        val associatedObjectHolder = if (useSeparateHolder) {
+//            val bodyPtr = bitcast(pointerType(bodyType), thisRef)
+//            loadSlot(structGep(bodyPtr, 1), isVar = false)
+//        } else {
+//            thisRef
+//        }
+//        val blockPtr = callFromBridge(
+//                context.llvm.Kotlin_ObjCExport_GetAssociatedObject,
+//                listOf(associatedObjectHolder)
+//        )
+//
+//        val invoke = loadBlockInvoke(blockPtr, bridge)
+//        val result = callFromBridge(invoke, listOf(blockPtr) + args)
+//
+//        val kotlinResult = if (bridge.returnsVoid) {
+//            theUnitInstanceRef.llvm
+//        } else {
+//            objCReferenceToKotlin(result, Lifetime.RETURN_VALUE)
+//        }
+//        ret(kotlinResult)
+//    }.also {
+//        LLVMSetLinkage(it, LLVMLinkage.LLVMInternalLinkage)
+//    }
+//
+//    val typeInfo = rttiGenerator.generateSyntheticInterfaceImpl(
+//            irInterface,
+//            mapOf(invokeMethod to constPointer(invokeImpl)),
+//            bodyType,
+//            immutable = true
+//    )
+//
+//    return generateFunction(
+//            codegen,
+//            functionType(codegen.kObjHeaderPtr, false, int8TypePtr, codegen.kObjHeaderPtrPtr),
+//            ""
+//    ) {
+//        val blockPtr = param(0)
+//        ifThen(icmpEq(blockPtr, kNullInt8Ptr)) {
+//            ret(kNullObjHeaderPtr)
+//        }
+//
+//        val retainedBlockPtr = callFromBridge(retainBlock, listOf(blockPtr))
+//
+//        val result = if (useSeparateHolder) {
+//            val result = allocInstance(typeInfo.llvm, Lifetime.RETURN_VALUE)
+//            val bodyPtr = bitcast(pointerType(bodyType), result)
+//            val holder = allocInstanceWithAssociatedObject(
+//                    symbols.interopForeignObjCObject.owner.typeInfoPtr,
+//                    retainedBlockPtr,
+//                    Lifetime.ARGUMENT
+//            )
+//            storeHeapRef(holder, structGep(bodyPtr, 1))
+//            result
+//        } else {
+//            allocInstanceWithAssociatedObject(typeInfo, retainedBlockPtr, Lifetime.RETURN_VALUE)
+//        }
+//
+//        ret(result)
+//    }.also {
+//        LLVMSetLinkage(it, LLVMLinkage.LLVMInternalLinkage)
+//    }
+//}
+
+//private fun FunctionGenerationContext.allocInstanceWithAssociatedObject(
+//        typeInfo: ConstPointer,
+//        associatedObject: LLVMValueRef,
+//        resultLifetime: Lifetime
+//): LLVMValueRef = call(
+//        context.llvm.Kotlin_ObjCExport_AllocInstanceWithAssociatedObject,
+//        listOf(typeInfo.llvm, associatedObject),
+//        resultLifetime
+//)
 
 private val BlockPointerBridge.blockInvokeLlvmType: LLVMTypeRef
     get() = functionType(
@@ -292,7 +292,8 @@ internal class BlockAdapterToFunctionGenerator(val objCExportCodeGenerator: ObjC
             // Note: it is the slot in the block located on stack, so no need to manage it properly:
             storeRefUnsafe(kotlinRef, slot)
 
-            val copiedBlock = callFromBridge(retainBlock, listOf(bitcast(int8TypePtr, blockOnStack)))
+            TODO("""
+                val copiedBlock = callFromBridge(retainBlock, listOf(bitcast(int8TypePtr, blockOnStack)))
 
             val autoreleaseReturnValue = context.llvm.externalFunction(
                     "objc_autoreleaseReturnValue",
@@ -301,14 +302,15 @@ internal class BlockAdapterToFunctionGenerator(val objCExportCodeGenerator: ObjC
             )
 
             ret(callFromBridge(autoreleaseReturnValue, listOf(copiedBlock)))
+            """.trimIndent())
         }.also {
             LLVMSetLinkage(it, LLVMLinkage.LLVMInternalLinkage)
         }
     }
 }
 
-private val ObjCExportCodeGenerator.retainBlock get() = context.llvm.externalFunction(
-        "objc_retainBlock",
-        functionType(int8TypePtr, false, int8TypePtr),
-        CurrentKonanModuleOrigin
-)
+//private val ObjCExportCodeGenerator.retainBlock get() = context.llvm.externalFunction(
+//        "objc_retainBlock",
+//        functionType(int8TypePtr, false, int8TypePtr),
+//        CurrentKonanModuleOrigin
+//)

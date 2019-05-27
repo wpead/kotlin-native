@@ -24,9 +24,9 @@ val CompilerOutputKind.isNativeBinary: Boolean get() = when (this) {
 }
 
 internal fun produceCStubs(context: Context, llvmModule: LLVMModuleRef) {
-    context.cStubsManager.compile(context.config.clang, context.messageCollector, context.inVerbosePhase)?.let {
-        parseAndLinkBitcodeFile(llvmModule, it.absolutePath)
-    }
+//    context.cStubsManager.compile(context.config.clang, context.messageCollector, context.inVerbosePhase)?.let {
+//        parseAndLinkBitcodeFile(llvmModule, it.absolutePath)
+//    }
 }
 
 private fun linkAllDependecies(context: Context, llvmModule: LLVMModuleRef, generatedBitcodeFiles: List<String>) {
@@ -112,10 +112,9 @@ internal fun produceOutput(context: Context) {
             context.bitcodeFileName = library.mainBitcodeFileName
         }
         CompilerOutputKind.BITCODE -> {
-            val output = context.config.outputFile
-            context.bitcodeFileName = output
-            val llvmModule = context.composer.getModules().first()
-            LLVMWriteBitcodeToFile(llvmModule, output)
+            context.composer.getModules().forEach { module ->
+                LLVMWriteBitcodeToFile(module, tempFiles.create("output_${module.hashCode()}", ".bc").absolutePath)
+            }
         }
     }
 }

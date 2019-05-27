@@ -6,7 +6,6 @@
 package org.jetbrains.kotlin.backend.konan
 
 import llvm.LLVMModuleRef
-import org.jetbrains.kotlin.backend.common.DumpIrTreeWithDescriptorsVisitor
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedSimpleFunctionDescriptor
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedTypeParameterDescriptor
 import org.jetbrains.kotlin.backend.common.validateIrModule
@@ -24,16 +23,11 @@ import org.jetbrains.kotlin.descriptors.impl.PropertyDescriptorImpl
 import org.jetbrains.kotlin.descriptors.impl.ReceiverParameterDescriptorImpl
 import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.ir.IrElement
-import org.jetbrains.kotlin.ir.SourceManager
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrFieldImpl
 import org.jetbrains.kotlin.ir.declarations.impl.IrFunctionImpl
 import org.jetbrains.kotlin.ir.declarations.impl.IrTypeParameterImpl
 import org.jetbrains.kotlin.ir.util.*
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
-import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
-import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
-import org.jetbrains.kotlin.ir.visitors.acceptVoid
 import org.jetbrains.kotlin.builtins.konan.KonanBuiltIns
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
 import org.jetbrains.kotlin.ir.symbols.impl.IrSimpleFunctionSymbolImpl
@@ -62,7 +56,6 @@ internal class SpecialDeclarationsFactory(val context: Context) : KotlinMangler 
     private val outerThisFields = mutableMapOf<ClassDescriptor, IrField>()
     private val bridgesDescriptors = mutableMapOf<Pair<IrSimpleFunction, BridgeDirections>, IrSimpleFunction>()
     private val loweredEnums = mutableMapOf<IrClass, LoweredEnum>()
-    private val ordinals = mutableMapOf<ClassDescriptor, Map<ClassDescriptor, Int>>()
 
     object DECLARATION_ORIGIN_FIELD_FOR_OUTER_THIS :
             IrDeclarationOriginImpl("FIELD_FOR_OUTER_THIS")
@@ -305,23 +298,18 @@ internal class Context(config: KonanConfig) : KonanBackendContext(config) {
         InteropBuiltIns(this.builtIns)
     }
 
+    val globalLlvm = GlobalLlvm(this)
+
     val composer = LlvmModuleComposer(this)
 
-    var llvmModule: LLVMModuleRef?
-        set(value) { composer.llvmModule = value }
-        get() = composer.llvmModule
-
-    lateinit var llvm: Llvm
-    lateinit var globalLlvm: GlobalLlvm
     lateinit var debugInfo: DebugInfo
-    lateinit var llvmDeclarations: LlvmDeclarations
     lateinit var bitcodeFileName: String
 
     val cStubsManager = CStubsManager(config.target)
 
     val coverage = CoverageManager(this)
 
-    protected fun separator(title: String) {
+    private fun separator(title: String) {
         println("\n\n--- ${title} ----------------------\n")
     }
 
@@ -348,49 +336,6 @@ internal class Context(config: KonanConfig) : KonanBackendContext(config) {
         irModule!!.accept(DumpIrTreeVisitor(out), "")
     }
 
-    fun printIrWithDescriptors() {
-        if (irModule == null) return
-        separator("IR:")
-        irModule!!.accept(DumpIrTreeWithDescriptorsVisitor(out), "")
-    }
-
-    fun printLocations() {
-        if (irModule == null) return
-        separator("Locations:")
-        irModule!!.acceptVoid(object: IrElementVisitorVoid {
-            override fun visitElement(element: IrElement) {
-                element.acceptChildrenVoid(this)
-            }
-
-            override fun visitFile(declaration: IrFile) {
-                val fileEntry = declaration.fileEntry
-                declaration.acceptChildren(object: IrElementVisitor<Unit, Int> {
-                    override fun visitElement(element: IrElement, data: Int) {
-                        for (i in 0..data) print("  ")
-                        println("${element.javaClass.name}: ${fileEntry.range(element)}")
-                        element.acceptChildren(this, data + 1)
-                    }
-                }, 0)
-            }
-
-            fun SourceManager.FileEntry.range(element:IrElement):String {
-                try {
-                    /* wasn't use multi line string to prevent appearing odd line
-                     * breaks in the dump. */
-                    return "${this.name}: ${this.line(element.startOffset)}" +
-                          ":${this.column(element.startOffset)} - " +
-                          "${this.line(element.endOffset)}" +
-                          ":${this.column(element.endOffset)}"
-
-                } catch (e:Exception) {
-                    return "${this.name}: ERROR(${e.javaClass.name}): ${e.message}"
-                }
-            }
-            fun SourceManager.FileEntry.line(offset:Int) = this.getLineNumber(offset)
-            fun SourceManager.FileEntry.column(offset:Int) = this.getColumnNumber(offset)
-        })
-    }
-
     fun verifyBitCode() {
 //        if (llvmModule == null) return
 //        verifyModule(llvmModule!!)
@@ -414,22 +359,7 @@ internal class Context(config: KonanConfig) : KonanBackendContext(config) {
         printBitCode()
     }
 
-    fun shouldVerifyDescriptors() = config.configuration.getBoolean(KonanConfigKeys.VERIFY_DESCRIPTORS)
-
-    fun shouldVerifyIr() = config.configuration.getBoolean(KonanConfigKeys.VERIFY_IR)
-
-    fun shouldVerifyBitCode() = config.configuration.getBoolean(KonanConfigKeys.VERIFY_BITCODE)
-
-    fun shouldPrintDescriptors() = config.configuration.getBoolean(KonanConfigKeys.PRINT_DESCRIPTORS)
-
-    fun shouldPrintIr() = config.configuration.getBoolean(KonanConfigKeys.PRINT_IR)
-
-    fun shouldPrintIrWithDescriptors()=
-            config.configuration.getBoolean(KonanConfigKeys.PRINT_IR_WITH_DESCRIPTORS)
-
     fun shouldPrintBitCode() = config.configuration.getBoolean(KonanConfigKeys.PRINT_BITCODE)
-
-    fun shouldPrintLocations() = config.configuration.getBoolean(KonanConfigKeys.PRINT_LOCATIONS)
 
     fun shouldProfilePhases() = config.phaseConfig.needProfiling
 

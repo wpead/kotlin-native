@@ -144,8 +144,6 @@ internal val IrClass.writableTypeInfoSymbolName: String
         return "ktypew:" + this.fqNameSafe.toString()
     }
 
-internal val theUnitInstanceName = "kobj:kotlin.Unit"
-
 internal val IrClass.objectInstanceFieldSymbolName: String
     get() {
         assert (this.isExported())
@@ -190,23 +188,8 @@ internal fun RuntimeAware.getLlvmFunctionType(function: IrFunction): LLVMTypeRef
     return functionType(returnType, isVarArg = false, paramTypes = *paramTypes.toTypedArray())
 }
 
-internal fun RuntimeAware.getLlvmFunctionType(symbol: DataFlowIR.FunctionSymbol): LLVMTypeRef {
-    val returnType = if (symbol.returnsUnit) voidType else getLLVMType(symbol.returnParameter.type)
-    val paramTypes = ArrayList(symbol.parameters.map { getLLVMType(it.type) })
-    if (isObjectType(returnType)) paramTypes.add(kObjHeaderPtrPtr)
-
-    return functionType(returnType, isVarArg = false, paramTypes = *paramTypes.toTypedArray())
-}
-
 internal val IrClass.typeInfoHasVtableAttached: Boolean
     get() = !this.isAbstract() && !this.isExternalObjCClass()
 
-internal fun ModuleDescriptor.privateFunctionSymbolName(index: Int, functionName: String?) = "private_functions_${name.asString()}_${functionName}_$index"
-
-internal fun ModuleDescriptor.privateClassSymbolName(index: Int, className: String?) = "private_classes_${name.asString()}_${className}_$index"
-
 internal val String.moduleConstructorName
     get() = "_Konan_init_${this}"
-
-internal val KonanLibrary.moduleConstructorName
-    get() = uniqueName.moduleConstructorName

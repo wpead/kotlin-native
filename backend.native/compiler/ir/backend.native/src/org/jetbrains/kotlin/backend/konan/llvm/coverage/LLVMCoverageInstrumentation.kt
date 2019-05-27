@@ -4,13 +4,11 @@
  */
 package org.jetbrains.kotlin.backend.konan.llvm.coverage
 
-import llvm.LLVMConstBitCast
-import llvm.LLVMCreatePGOFunctionNameVar
-import llvm.LLVMInstrProfIncrement
-import llvm.LLVMValueRef
+import llvm.*
 import org.jetbrains.kotlin.backend.konan.Context
 import org.jetbrains.kotlin.backend.konan.llvm.*
 import org.jetbrains.kotlin.ir.IrElement
+import org.jetbrains.kotlin.ir.declarations.IrDeclaration
 import org.jetbrains.kotlin.ir.declarations.IrFunction
 
 /**
@@ -21,7 +19,20 @@ internal class LLVMCoverageInstrumentation(
         override val context: Context,
         private val functionRegions: FunctionRegions,
         private val callSitePlacer: (function: LLVMValueRef, args: List<LLVMValueRef>) -> Unit
-) : ContextUtils {
+) : LlvmDeclarationsAware {
+
+    override val llvmModule: LLVMModuleRef
+        get() = TODO("not implemented")
+
+    override fun isExternal(declaration: IrDeclaration): Boolean {
+        TODO("not implemented")
+    }
+
+    override val llvmDeclarations: LlvmDeclarations
+        get() = TODO("not implemented")
+
+    override val llvm: Llvm
+        get() = TODO("not implemented")
 
     private val functionNameGlobal = createFunctionNameGlobal(functionRegions.function)
 

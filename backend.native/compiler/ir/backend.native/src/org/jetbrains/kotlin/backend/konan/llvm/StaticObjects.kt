@@ -17,33 +17,21 @@ private fun ConstPointer.add(index: Int): ConstPointer {
 }
 
 // Must match OBJECT_TAG_PERMANENT_CONTAINER in C++.
-private fun StaticData.permanentTag(typeInfo: ConstPointer): ConstPointer {
+private fun RuntimeAware.permanentTag(typeInfo: ConstPointer): ConstPointer {
     // Only pointer arithmetic via GEP works on constant pointers in LLVM.
     return typeInfo.bitcast(int8TypePtr).add(1).bitcast(kTypeInfoPtr)
 }
 
-private fun StaticData.objHeader(typeInfo: ConstPointer): Struct {
+private fun RuntimeAware.objHeader(typeInfo: ConstPointer): Struct {
     return Struct(runtime.objHeaderType, permanentTag(typeInfo))
 }
 
-private fun StaticData.arrayHeader(typeInfo: ConstPointer, length: Int): Struct {
+private fun RuntimeAware.arrayHeader(typeInfo: ConstPointer, length: Int): Struct {
     assert (length >= 0)
     return Struct(runtime.arrayHeaderType, permanentTag(typeInfo), Int32(length))
 }
 
-internal fun StaticData.createKotlinStringLiteral(value: String): ConstPointer {
-    val name = "kstr:" + value.globalHashBase64
-    val elements = value.toCharArray().map(::Char16)
-
-    val objRef = createConstKotlinArray(context.ir.symbols.string.owner, elements)
-
-    val res = createAlias(name, objRef)
-    LLVMSetLinkage(res.llvm, LLVMLinkage.LLVMWeakAnyLinkage)
-
-    return res
-}
-
-private fun StaticData.createRef(objHeaderPtr: ConstPointer) = objHeaderPtr.bitcast(kObjHeaderPtr)
+private fun RuntimeAware.createRef(objHeaderPtr: ConstPointer) = objHeaderPtr.bitcast(kObjHeaderPtr)
 
 internal fun StaticData.createConstKotlinArray(arrayClass: IrClass, elements: List<LLVMValueRef>) =
         createConstKotlinArray(arrayClass, elements.map { constValue(it) }).llvm
@@ -110,7 +98,7 @@ internal fun StaticData.createConstArrayList(array: ConstPointer, length: Int): 
     return createConstKotlinObject(arrayListClass, *sorted.values.toTypedArray())
 }
 
-internal fun StaticData.createUniqueInstance(
+internal fun ContextUtils.createUniqueInstance(
         kind: UniqueKind, bodyType: LLVMTypeRef, typeInfo: ConstPointer): ConstPointer {
     assert (getStructElements(bodyType).size == 1) // ObjHeader only.
     val objHeader = when (kind) {
@@ -122,7 +110,7 @@ internal fun StaticData.createUniqueInstance(
     return global.pointer
 }
 
-internal fun ContextUtils.unique(kind: UniqueKind): ConstPointer {
+internal fun LlvmDeclarationsAware.unique(kind: UniqueKind): ConstPointer {
     val descriptor = when (kind) {
         UniqueKind.UNIT -> context.ir.symbols.unit.owner
         UniqueKind.EMPTY_ARRAY -> context.ir.symbols.array.owner
@@ -132,9 +120,9 @@ internal fun ContextUtils.unique(kind: UniqueKind): ConstPointer {
                 kind.llvmName, context.globalLlvm.runtime.objHeaderType, origin = descriptor.llvmSymbolOrigin
         ))
     } else {
-        context.llvmDeclarations.forUnique(kind).pointer
+        llvmDeclarations.forUnique(kind).pointer
     }
 }
 
-internal val ContextUtils.theUnitInstanceRef: ConstPointer
+internal val LlvmDeclarationsAware.theUnitInstanceRef: ConstPointer
     get() = this.unique(UniqueKind.UNIT)

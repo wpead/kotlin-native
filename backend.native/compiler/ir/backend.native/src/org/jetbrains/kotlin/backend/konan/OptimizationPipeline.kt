@@ -29,7 +29,7 @@ internal fun shouldRunLateBitcodePasses(context: Context): Boolean {
 
 internal fun runLateBitcodePasses(context: Context, llvmModule: LLVMModuleRef) {
     val passManager = LLVMCreatePassManager()!!
-    LLVMKotlinAddTargetLibraryInfoWrapperPass(passManager, context.llvm.targetTriple)
+    LLVMKotlinAddTargetLibraryInfoWrapperPass(passManager, context.globalLlvm.runtime.target)
     context.coverage.addLateLlvmPasses(passManager)
     LLVMRunPassManager(passManager, llvmModule)
     LLVMDisposePassManager(passManager)

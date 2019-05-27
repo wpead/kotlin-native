@@ -11,18 +11,26 @@ import org.jetbrains.kotlin.backend.konan.computePrimitiveBinaryTypeOrNull
 import org.jetbrains.kotlin.backend.konan.descriptors.*
 import org.jetbrains.kotlin.backend.konan.ir.*
 import org.jetbrains.kotlin.backend.konan.isExternalObjCClassMethod
-import org.jetbrains.kotlin.ir.declarations.IrClass
-import org.jetbrains.kotlin.ir.declarations.IrField
-import org.jetbrains.kotlin.ir.declarations.IrFunction
-import org.jetbrains.kotlin.ir.declarations.IrProperty
+import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.types.*
+import org.jetbrains.kotlin.ir.util.file
 import org.jetbrains.kotlin.ir.util.fqNameSafe
 import org.jetbrains.kotlin.ir.util.isAnnotationClass
 import org.jetbrains.kotlin.ir.util.isInterface
 import org.jetbrains.kotlin.konan.KonanAbiVersion
 import org.jetbrains.kotlin.name.FqName
 
-internal class RTTIGenerator(override val context: Context) : ContextUtils {
+internal class RTTIGenerator(
+        override val context: Context,
+        override val llvmDeclarations: LlvmDeclarations,
+        override val llvm: Llvm,
+        override val llvmModule: LLVMModuleRef,
+        override val staticData: StaticData,
+        private val file: IrFile
+) : ContextUtils, LlvmDeclarationsAware, StaticDataAware {
+
+    override fun isExternal(declaration: IrDeclaration): Boolean =
+            declaration.file != file
 
     private val acyclicCache = mutableMapOf<IrType, Boolean>()
     private val safeAcyclicFieldTypes = setOf(
@@ -49,7 +57,7 @@ internal class RTTIGenerator(override val context: Context) : ContextUtils {
     private fun checkAcyclicClass(irClass: IrClass): Boolean = when {
         irClass.symbol == context.ir.symbols.array -> false
         irClass.isArray -> true
-        context.llvmDeclarations.forClass(irClass).fields.all { checkAcyclicFieldType(it.type) } -> true
+        llvmDeclarations.forClass(irClass).fields.all { checkAcyclicFieldType(it.type) } -> true
         else -> false
     }
 
@@ -174,7 +182,7 @@ internal class RTTIGenerator(override val context: Context) : ContextUtils {
 
         val className = irClass.fqNameSafe
 
-        val llvmDeclarations = context.llvmDeclarations.forClass(irClass)
+        val llvmDeclarations = llvmDeclarations.forClass(irClass)
 
         val bodyType = llvmDeclarations.bodyType
 
@@ -282,7 +290,7 @@ internal class RTTIGenerator(override val context: Context) : ContextUtils {
             return NullPointer(runtime.extendedTypeInfoType)
 
         val className = irClass.fqNameSafe.toString()
-        val llvmDeclarations = context.llvmDeclarations.forClass(irClass)
+        val llvmDeclarations = llvmDeclarations.forClass(irClass)
         val bodyType = llvmDeclarations.bodyType
         val elementType = arrayClasses[className]
         val value = if (elementType != null) {

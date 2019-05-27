@@ -147,13 +147,13 @@ internal val Context.getUnboxFunction: (IrClass) -> IrSimpleFunction by Context.
  * Initialize static boxing.
  * If output target is native binary then the cache is created.
  */
-internal fun initializeCachedBoxes(context: Context) {
+internal fun initializeCachedBoxes(staticData: StaticData, context: Context) {
     if (context.config.produce.isNativeBinary) {
         BoxCache.values().forEach { cache ->
             val cacheName = "${cache.name}_CACHE"
             val rangeStart = "${cache.name}_RANGE_FROM"
             val rangeEnd = "${cache.name}_RANGE_TO"
-            initCache(cache, context, cacheName, rangeStart, rangeEnd)
+            initCache(staticData, cache, context, cacheName, rangeStart, rangeEnd)
         }
     }
 }
@@ -161,11 +161,10 @@ internal fun initializeCachedBoxes(context: Context) {
 /**
  * Adds global that refers to the cache.
  */
-private fun initCache(cache: BoxCache, context: Context, cacheName: String,
+private fun initCache(staticData: StaticData, cache: BoxCache, context: Context, cacheName: String,
                       rangeStartName: String, rangeEndName: String) {
 
     val kotlinType = context.irBuiltIns.getKotlinClass(cache)
-    val staticData = context.globalLlvm.staticData
     val llvmType = staticData.getLLVMType(kotlinType.defaultType)
 
     val (start, end) = context.config.target.getBoxCacheRange(cache)

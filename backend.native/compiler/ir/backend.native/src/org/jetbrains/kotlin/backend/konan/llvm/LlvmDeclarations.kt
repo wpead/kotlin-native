@@ -16,19 +16,313 @@ import org.jetbrains.kotlin.ir.types.isNothing
 import org.jetbrains.kotlin.ir.util.defaultType
 import org.jetbrains.kotlin.ir.util.fqNameSafe
 import org.jetbrains.kotlin.ir.util.hasAnnotation
-import org.jetbrains.kotlin.ir.util.file
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 
-internal fun createLlvmDeclarations(context: Context): LlvmDeclarations {
-    val generator = DeclarationsGeneratorVisitor(context)
-    context.ir.irModule.acceptChildrenVoid(generator)
+internal fun createFileLlvmDeclarations(context: Context, file: IrFile, llvm: Llvm): LlvmDeclarations {
+    val generator = FileDeclarationsGeneratorVisitor(context, file, llvm)
+    file.acceptChildrenVoid(generator)
     return with(generator) {
         LlvmDeclarations(
                 functions, classes, fields, staticFields, uniques
         )
+    }
+}
+
+private class FileDeclarationsGeneratorVisitor(
+        override val context: Context,
+        irFile: IrFile,
+        private val llvm: Llvm) :
+        IrElementVisitorVoid, ContextUtils {
+
+    override val llvmModule: LLVMModuleRef = context.composer.getLlvmModuleForFile(irFile)
+
+
+    val functions = mutableMapOf<IrFunction, FunctionLlvmDeclarations>()
+    val classes = mutableMapOf<IrClass, ClassLlvmDeclarations>()
+    val fields = mutableMapOf<IrField, FieldLlvmDeclarations>()
+    val staticFields = mutableMapOf<IrField, StaticFieldLlvmDeclarations>()
+    val uniques = mutableMapOf<UniqueKind, UniqueLlvmDeclarations>()
+
+    private class Namer(val prefix: String) {
+        private val names = mutableMapOf<IrDeclaration, Name>()
+        private val counts = mutableMapOf<FqName, Int>()
+
+        fun getName(parent: FqName, declaration: IrDeclaration): Name {
+            return names.getOrPut(declaration) {
+                val count = counts.getOrDefault(parent, 0) + 1
+                counts[parent] = count
+                Name.identifier(prefix + count)
+            }
+        }
+    }
+
+    val objectNamer = Namer("object-")
+
+    private fun getLocalName(parent: FqName, declaration: IrDeclaration): Name {
+        if (declaration.isAnonymousObject) {
+            return objectNamer.getName(parent, declaration)
+        }
+
+        return declaration.name
+    }
+
+    private fun getFqName(declaration: IrDeclaration): FqName {
+        val parent = declaration.parent
+        val parentFqName = when (parent) {
+            is IrPackageFragment -> parent.fqName
+            is IrDeclaration -> getFqName(parent)
+            else -> error(parent)
+        }
+
+        val localName = getLocalName(parentFqName, declaration)
+        return parentFqName.child(localName)
+    }
+
+    /**
+     * Produces the name to be used for non-exported LLVM declarations corresponding to [declaration].
+     *
+     * Note: since these declarations are going to be private, the name is only required not to clash with any
+     * exported declarations.
+     */
+    private fun qualifyInternalName(declaration: IrDeclaration): String {
+        return getFqName(declaration).asString() + "#internal"
+    }
+
+    override fun visitElement(element: IrElement) {
+        element.acceptChildrenVoid(this)
+    }
+
+    override fun visitFile(declaration: IrFile) {
+        declaration.acceptChildrenVoid(this)
+    }
+
+    override fun visitClass(declaration: IrClass) {
+        this.classes[declaration] = createClassDeclarations(declaration)
+
+        super.visitClass(declaration)
+    }
+
+    private fun createClassDeclarations(declaration: IrClass): ClassLlvmDeclarations {
+        val internalName = qualifyInternalName(declaration)
+
+        val fields = getFields(declaration)
+        val bodyType = createClassBodyType("kclassbody:$internalName", fields)
+
+        val typeInfoPtr: ConstPointer
+        val typeInfoGlobal: StaticData.Global
+
+        val typeInfoSymbolName = if (declaration.isExported()) {
+            declaration.typeInfoSymbolName
+        } else {
+            "ktype:$internalName"
+        }
+
+        if (declaration.typeInfoHasVtableAttached) {
+            // Create the special global consisting of TypeInfo and vtable.
+
+            val typeInfoGlobalName = "ktypeglobal:$internalName"
+
+            val typeInfoWithVtableType = structType(
+                    runtime.typeInfoType,
+                    LLVMArrayType(int8TypePtr, context.getVtableBuilder(declaration).vtableEntries.size)!!
+            )
+
+            typeInfoGlobal = createGlobal(typeInfoWithVtableType, typeInfoGlobalName, isExported = false)
+
+            val llvmTypeInfoPtr = LLVMAddAlias(llvmModule,
+                    kTypeInfoPtr,
+                    typeInfoGlobal.pointer.getElementPtr(0).llvm,
+                    typeInfoSymbolName)!!
+
+            if (declaration.isExported()) {
+                if (llvmTypeInfoPtr.name != typeInfoSymbolName) {
+                    // So alias name has been mangled by LLVM to avoid name clash.
+                    throw IllegalArgumentException("Global '$typeInfoSymbolName' already exists")
+                }
+            } else {
+                LLVMSetLinkage(llvmTypeInfoPtr, LLVMLinkage.LLVMInternalLinkage)
+            }
+
+            typeInfoPtr = constPointer(llvmTypeInfoPtr)
+
+        } else {
+            typeInfoGlobal = createGlobal(runtime.typeInfoType,
+                    typeInfoSymbolName,
+                    isExported = declaration.isExported())
+
+            typeInfoPtr = typeInfoGlobal.pointer
+        }
+
+        if (declaration.isUnit() || declaration.isKotlinArray())
+            createUniqueDeclarations(declaration, typeInfoPtr, bodyType)
+
+        val singletonDeclarations = if (declaration.kind.isSingleton) {
+            createSingletonDeclarations(declaration)
+        } else {
+            null
+        }
+
+        val objCDeclarations = if (declaration.isKotlinObjCClass()) {
+            createKotlinObjCClassDeclarations(declaration)
+        } else {
+            null
+        }
+
+        val writableTypeInfoType = runtime.writableTypeInfoType
+        val writableTypeInfoGlobal = if (writableTypeInfoType == null) {
+            null
+        } else if (declaration.isExported()) {
+            val name = declaration.writableTypeInfoSymbolName
+            createGlobal(writableTypeInfoType, name, isExported = true).also {
+                it.setLinkage(LLVMLinkage.LLVMCommonLinkage) // Allows to be replaced by other bitcode module.
+            }
+        } else {
+            createGlobal(writableTypeInfoType, "")
+        }.also {
+            it.setZeroInitializer()
+        }
+
+        return ClassLlvmDeclarations(bodyType, fields, typeInfoGlobal, writableTypeInfoGlobal, typeInfoPtr,
+                singletonDeclarations, objCDeclarations)
+    }
+
+    private fun createUniqueDeclarations(
+            irClass: IrClass, typeInfoPtr: ConstPointer, bodyType: LLVMTypeRef) {
+        when {
+            irClass.isUnit() -> {
+                uniques[UniqueKind.UNIT] =
+                        UniqueLlvmDeclarations(createUniqueInstance(UniqueKind.UNIT, bodyType, typeInfoPtr))
+            }
+            irClass.isKotlinArray() -> {
+                uniques[UniqueKind.EMPTY_ARRAY] =
+                        UniqueLlvmDeclarations(createUniqueInstance(UniqueKind.EMPTY_ARRAY, bodyType, typeInfoPtr))
+            }
+            else -> TODO("Unsupported unique $irClass")
+        }
+    }
+
+    private fun createSingletonDeclarations(irClass: IrClass): SingletonLlvmDeclarations? {
+
+        if (irClass.isUnit()) {
+            return null
+        }
+
+        val isExported = irClass.isExported()
+        val symbolName = if (isExported) {
+            irClass.objectInstanceFieldSymbolName
+        } else {
+            "kobjref:" + qualifyInternalName(irClass)
+        }
+        val threadLocal = !(irClass.objectIsShared && context.config.threadsAreAllowed)
+        val instanceFieldRef = addGlobal(
+                symbolName, getLLVMType(irClass.defaultType), isExported = isExported, threadLocal = threadLocal)
+
+        LLVMSetInitializer(instanceFieldRef, kNullObjHeaderPtr)
+
+        val instanceShadowFieldRef =
+                if (threadLocal) null
+                else {
+                    val shadowSymbolName = if (isExported) {
+                        irClass.objectInstanceShadowFieldSymbolName
+                    } else {
+                        "kshadowobjref:" + qualifyInternalName(irClass)
+                    }
+                    addGlobal(shadowSymbolName, getLLVMType(irClass.defaultType), isExported = isExported, threadLocal = true)
+                }
+
+        instanceShadowFieldRef?.let { LLVMSetInitializer(it, kNullObjHeaderPtr) }
+
+        return SingletonLlvmDeclarations(instanceFieldRef, instanceShadowFieldRef)
+    }
+
+    private fun createKotlinObjCClassDeclarations(irClass: IrClass): KotlinObjCClassLlvmDeclarations {
+        val internalName = qualifyInternalName(irClass)
+
+        val classPointerGlobal = createGlobal(int8TypePtr, "kobjcclassptr:$internalName")
+
+        val classInfoGlobal = createGlobal(
+                context.globalLlvm.runtime.kotlinObjCClassInfo,
+                "kobjcclassinfo:$internalName"
+        ).apply {
+            setConstant(true)
+        }
+
+        val bodyOffsetGlobal = createGlobal(int32Type, "kobjcbodyoffs:$internalName")
+
+        return KotlinObjCClassLlvmDeclarations(classPointerGlobal, classInfoGlobal, bodyOffsetGlobal)
+    }
+
+    override fun visitField(declaration: IrField) {
+        super.visitField(declaration)
+
+        val containingClass = declaration.parent as? IrClass
+        if (containingClass != null) {
+            val classDeclarations = this.classes[containingClass] ?:
+            error(containingClass.descriptor.toString())
+            val allFields = classDeclarations.fields
+            this.fields[declaration] = FieldLlvmDeclarations(
+                    allFields.indexOf(declaration) + 1, // First field is ObjHeader.
+                    classDeclarations.bodyType
+            )
+        } else {
+            // Fields are module-private, so we use internal name:
+            val name = "kvar:" + qualifyInternalName(declaration)
+            val storage = addGlobal(
+                    name, getLLVMType(declaration.type), isExported = false,
+                    threadLocal = declaration.storageClass == FieldStorage.THREAD_LOCAL)
+
+            this.staticFields[declaration] = StaticFieldLlvmDeclarations(storage)
+        }
+    }
+
+    override fun visitFunction(declaration: IrFunction) {
+        super.visitFunction(declaration)
+
+        if (!declaration.isReal) return
+
+        val llvmFunctionType = getLlvmFunctionType(declaration)
+
+        if ((declaration is IrConstructor && declaration.isObjCConstructor)) {
+            return
+        }
+
+        val llvmFunction = if (declaration.isExternal) {
+            if (declaration.isTypedIntrinsic || declaration.isObjCBridgeBased()
+                    || declaration.annotations.hasAnnotation(RuntimeNames.cCall)) return
+
+            llvm.externalFunction(declaration.symbolName, llvmFunctionType,
+                    // Assume that `external fun` is defined in native libs attached to this module:
+                    origin = declaration.llvmSymbolOrigin,
+                    independent = declaration.hasAnnotation(RuntimeNames.independent)
+            )
+        } else {
+            val symbolName = if (declaration.isExported()) {
+                declaration.symbolName.also {
+                    if (declaration.name.asString() != "main") {
+                        assert(LLVMGetNamedFunction(llvmModule, it) == null) { it }
+                    } else {
+                        // As a workaround, allow `main` functions to clash because frontend accepts this.
+                        // See [OverloadResolver.isTopLevelMainInDifferentFiles] usage.
+                    }
+                }
+            } else {
+                "kfun:" + qualifyInternalName(declaration)
+            }
+            val function = LLVMAddFunction(llvmModule, symbolName, llvmFunctionType)!!
+            if (declaration.returnType.isNothing())
+                setFunctionNoReturn(function)
+            function
+        }
+
+        // TODO: do we still need it?
+        if (!context.shouldOptimize()) {
+            LLVMAddTargetDependentFunctionAttr(llvmFunction, "no-frame-pointer-elim", "true")
+        }
+
+        this.functions[declaration] = FunctionLlvmDeclarations(llvmFunction)
     }
 }
 
@@ -93,9 +387,8 @@ internal class UniqueLlvmDeclarations(val pointer: ConstPointer)
  * All fields of the class instance.
  * The order respects the class hierarchy, i.e. a class [fields] contains superclass [fields] as a prefix.
  */
-internal fun ContextUtils.getFields(irClass: IrClass) = context.getFields(irClass)
 
-internal fun Context.getFields(irClass: IrClass): List<IrField> {
+internal fun getFields(irClass: IrClass): List<IrField> {
     val superClass = irClass.getSuperClassNotAny() // TODO: what if Any has fields?
     val superFields = if (superClass != null) getFields(superClass) else emptyList()
 
@@ -105,7 +398,7 @@ internal fun Context.getFields(irClass: IrClass): List<IrField> {
 /**
  * Fields declared in the class.
  */
-private fun Context.getDeclaredFields(irClass: IrClass): List<IrField> {
+private fun getDeclaredFields(irClass: IrClass): List<IrField> {
     // TODO: Here's what is going on here:
     // The existence of a backing field for a property is only described in the IR,
     // but not in the PropertyDescriptor.
@@ -134,305 +427,13 @@ private fun Context.getDeclaredFields(irClass: IrClass): List<IrField> {
     }
 }
 
-private fun ContextUtils.createClassBodyType(name: String, fields: List<IrField>, file: IrFile): LLVMTypeRef {
+private fun ContextUtils.createClassBodyType(name: String, fields: List<IrField>): LLVMTypeRef {
     val fieldTypes = listOf(runtime.objHeaderType) + fields.map { getLLVMType(it.type) }
     // TODO: consider adding synthetic ObjHeader field to Any.
 
-    val classType = LLVMStructCreateNamed(LLVMGetModuleContext(context.composer.getLlvmModuleForFile(file)), name)!!
+    val classType = LLVMStructCreateNamed(LLVMGetModuleContext(llvmModule), name)!!
 
     LLVMStructSetBody(classType, fieldTypes.toCValues(), fieldTypes.size, 0)
 
     return classType
-}
-
-private class DeclarationsGeneratorVisitor(override val context: Context) :
-        IrElementVisitorVoid, ContextUtils {
-
-    val functions = mutableMapOf<IrFunction, FunctionLlvmDeclarations>()
-    val classes = mutableMapOf<IrClass, ClassLlvmDeclarations>()
-    val fields = mutableMapOf<IrField, FieldLlvmDeclarations>()
-    val staticFields = mutableMapOf<IrField, StaticFieldLlvmDeclarations>()
-    val uniques = mutableMapOf<UniqueKind, UniqueLlvmDeclarations>()
-
-    private lateinit var currentFile: IrFile
-
-    private class Namer(val prefix: String) {
-        private val names = mutableMapOf<IrDeclaration, Name>()
-        private val counts = mutableMapOf<FqName, Int>()
-
-        fun getName(parent: FqName, declaration: IrDeclaration): Name {
-            return names.getOrPut(declaration) {
-                val count = counts.getOrDefault(parent, 0) + 1
-                counts[parent] = count
-                Name.identifier(prefix + count)
-            }
-        }
-    }
-
-    val objectNamer = Namer("object-")
-
-    private fun getLocalName(parent: FqName, declaration: IrDeclaration): Name {
-        if (declaration.isAnonymousObject) {
-            return objectNamer.getName(parent, declaration)
-        }
-
-        return declaration.name
-    }
-
-    private fun getFqName(declaration: IrDeclaration): FqName {
-        val parent = declaration.parent
-        val parentFqName = when (parent) {
-            is IrPackageFragment -> parent.fqName
-            is IrDeclaration -> getFqName(parent)
-            else -> error(parent)
-        }
-
-        val localName = getLocalName(parentFqName, declaration)
-        return parentFqName.child(localName)
-    }
-
-    /**
-     * Produces the name to be used for non-exported LLVM declarations corresponding to [declaration].
-     *
-     * Note: since these declarations are going to be private, the name is only required not to clash with any
-     * exported declarations.
-     */
-    private fun qualifyInternalName(declaration: IrDeclaration): String {
-        return getFqName(declaration).asString() + "#internal"
-    }
-
-    override fun visitElement(element: IrElement) {
-        element.acceptChildrenVoid(this)
-    }
-
-    override fun visitFile(declaration: IrFile) {
-        currentFile = declaration
-        declaration.acceptChildrenVoid(this)
-    }
-
-    override fun visitClass(declaration: IrClass) {
-        this.classes[declaration] = createClassDeclarations(declaration)
-
-        super.visitClass(declaration)
-    }
-
-    private fun createClassDeclarations(declaration: IrClass): ClassLlvmDeclarations {
-        val internalName = qualifyInternalName(declaration)
-
-        val fields = getFields(declaration)
-        val bodyType = createClassBodyType("kclassbody:$internalName", fields, declaration.file)
-
-        val typeInfoPtr: ConstPointer
-        val typeInfoGlobal: StaticData.Global
-
-        val typeInfoSymbolName = if (declaration.isExported()) {
-            declaration.typeInfoSymbolName
-        } else {
-            "ktype:$internalName"
-        }
-
-        if (declaration.typeInfoHasVtableAttached) {
-            // Create the special global consisting of TypeInfo and vtable.
-
-            val typeInfoGlobalName = "ktypeglobal:$internalName"
-
-            val typeInfoWithVtableType = structType(
-                    runtime.typeInfoType,
-                    LLVMArrayType(int8TypePtr, context.getVtableBuilder(declaration).vtableEntries.size)!!
-            )
-
-            typeInfoGlobal = staticData.createGlobal(typeInfoWithVtableType, typeInfoGlobalName, isExported = false)
-
-            val llvmTypeInfoPtr = LLVMAddAlias(context.composer.getLlvmModuleForFile(currentFile),
-                    kTypeInfoPtr,
-                    typeInfoGlobal.pointer.getElementPtr(0).llvm,
-                    typeInfoSymbolName)!!
-
-            if (declaration.isExported()) {
-                if (llvmTypeInfoPtr.name != typeInfoSymbolName) {
-                    // So alias name has been mangled by LLVM to avoid name clash.
-                    throw IllegalArgumentException("Global '$typeInfoSymbolName' already exists")
-                }
-            } else {
-                LLVMSetLinkage(llvmTypeInfoPtr, LLVMLinkage.LLVMInternalLinkage)
-            }
-
-            typeInfoPtr = constPointer(llvmTypeInfoPtr)
-
-        } else {
-            typeInfoGlobal = staticData.createGlobal(runtime.typeInfoType,
-                    typeInfoSymbolName,
-                    isExported = declaration.isExported())
-
-            typeInfoPtr = typeInfoGlobal.pointer
-        }
-
-        if (declaration.isUnit() || declaration.isKotlinArray())
-            createUniqueDeclarations(declaration, typeInfoPtr, bodyType)
-
-        val singletonDeclarations = if (declaration.kind.isSingleton) {
-            createSingletonDeclarations(declaration)
-        } else {
-            null
-        }
-
-        val objCDeclarations = if (declaration.isKotlinObjCClass()) {
-            createKotlinObjCClassDeclarations(declaration)
-        } else {
-            null
-        }
-
-        val writableTypeInfoType = runtime.writableTypeInfoType
-        val writableTypeInfoGlobal = if (writableTypeInfoType == null) {
-            null
-        } else if (declaration.isExported()) {
-            val name = declaration.writableTypeInfoSymbolName
-            staticData.createGlobal(writableTypeInfoType, name, isExported = true).also {
-                it.setLinkage(LLVMLinkage.LLVMCommonLinkage) // Allows to be replaced by other bitcode module.
-            }
-        } else {
-            staticData.createGlobal(writableTypeInfoType, "")
-        }.also {
-            it.setZeroInitializer()
-        }
-
-        return ClassLlvmDeclarations(bodyType, fields, typeInfoGlobal, writableTypeInfoGlobal, typeInfoPtr,
-                singletonDeclarations, objCDeclarations)
-    }
-
-    private fun createUniqueDeclarations(
-            irClass: IrClass, typeInfoPtr: ConstPointer, bodyType: LLVMTypeRef) {
-        when {
-                irClass.isUnit() -> {
-                    uniques[UniqueKind.UNIT] =
-                            UniqueLlvmDeclarations(staticData.createUniqueInstance(UniqueKind.UNIT, bodyType, typeInfoPtr))
-                }
-                irClass.isKotlinArray() -> {
-                    uniques[UniqueKind.EMPTY_ARRAY] =
-                            UniqueLlvmDeclarations(staticData.createUniqueInstance(UniqueKind.EMPTY_ARRAY, bodyType, typeInfoPtr))
-                }
-                else -> TODO("Unsupported unique $irClass")
-        }
-    }
-
-    private fun createSingletonDeclarations(irClass: IrClass): SingletonLlvmDeclarations? {
-
-        if (irClass.isUnit()) {
-            return null
-        }
-
-        val isExported = irClass.isExported()
-        val symbolName = if (isExported) {
-            irClass.objectInstanceFieldSymbolName
-        } else {
-            "kobjref:" + qualifyInternalName(irClass)
-        }
-        val threadLocal = !(irClass.objectIsShared && context.config.threadsAreAllowed)
-        val instanceFieldRef = addGlobal(
-                symbolName, getLLVMType(irClass.defaultType), isExported = isExported, threadLocal = threadLocal)
-
-        LLVMSetInitializer(instanceFieldRef, kNullObjHeaderPtr)
-
-        val instanceShadowFieldRef =
-                if (threadLocal) null
-                else {
-                    val shadowSymbolName = if (isExported) {
-                        irClass.objectInstanceShadowFieldSymbolName
-                    } else {
-                        "kshadowobjref:" + qualifyInternalName(irClass)
-                    }
-                    addGlobal(shadowSymbolName, getLLVMType(irClass.defaultType), isExported = isExported, threadLocal = true)
-                }
-
-        instanceShadowFieldRef?.let { LLVMSetInitializer(it, kNullObjHeaderPtr) }
-
-        return SingletonLlvmDeclarations(instanceFieldRef, instanceShadowFieldRef)
-    }
-
-    private fun createKotlinObjCClassDeclarations(irClass: IrClass): KotlinObjCClassLlvmDeclarations {
-        val internalName = qualifyInternalName(irClass)
-
-        val classPointerGlobal = staticData.createGlobal(int8TypePtr, "kobjcclassptr:$internalName")
-
-        val classInfoGlobal = staticData.createGlobal(
-                context.globalLlvm.runtime.kotlinObjCClassInfo,
-                "kobjcclassinfo:$internalName"
-        ).apply {
-            setConstant(true)
-        }
-
-        val bodyOffsetGlobal = staticData.createGlobal(int32Type, "kobjcbodyoffs:$internalName")
-
-        return KotlinObjCClassLlvmDeclarations(classPointerGlobal, classInfoGlobal, bodyOffsetGlobal)
-    }
-
-    override fun visitField(declaration: IrField) {
-        super.visitField(declaration)
-
-        val containingClass = declaration.parent as? IrClass
-        if (containingClass != null) {
-            val classDeclarations = this.classes[containingClass] ?:
-                error(containingClass.descriptor.toString())
-            val allFields = classDeclarations.fields
-            this.fields[declaration] = FieldLlvmDeclarations(
-                    allFields.indexOf(declaration) + 1, // First field is ObjHeader.
-                    classDeclarations.bodyType
-            )
-        } else {
-            // Fields are module-private, so we use internal name:
-            val name = "kvar:" + qualifyInternalName(declaration)
-            val storage = addGlobal(
-                    name, getLLVMType(declaration.type), isExported = false,
-                    threadLocal = declaration.storageClass == FieldStorage.THREAD_LOCAL)
-
-            this.staticFields[declaration] = StaticFieldLlvmDeclarations(storage)
-        }
-    }
-
-    override fun visitFunction(declaration: IrFunction) {
-        super.visitFunction(declaration)
-
-        if (!declaration.isReal) return
-
-        val llvmFunctionType = getLlvmFunctionType(declaration)
-
-        if ((declaration is IrConstructor && declaration.isObjCConstructor)) {
-            return
-        }
-
-        val llvmFunction = if (declaration.isExternal) {
-            if (declaration.isTypedIntrinsic || declaration.isObjCBridgeBased()
-                    || declaration.annotations.hasAnnotation(RuntimeNames.cCall)) return
-
-            context.llvm.externalFunction(declaration.symbolName, llvmFunctionType,
-                    // Assume that `external fun` is defined in native libs attached to this module:
-                    origin = declaration.llvmSymbolOrigin,
-                    independent = declaration.hasAnnotation(RuntimeNames.independent)
-            )
-        } else {
-            val symbolName = if (declaration.isExported()) {
-                declaration.symbolName.also {
-                    if (declaration.name.asString() != "main") {
-                        assert(LLVMGetNamedFunction(context.composer.getLlvmModuleForFile(currentFile), it) == null) { it }
-                    } else {
-                        // As a workaround, allow `main` functions to clash because frontend accepts this.
-                        // See [OverloadResolver.isTopLevelMainInDifferentFiles] usage.
-                    }
-                }
-            } else {
-                "kfun:" + qualifyInternalName(declaration)
-            }
-            val function = LLVMAddFunction(context.composer.getLlvmModuleForFile(currentFile), symbolName, llvmFunctionType)!!
-            if (declaration.returnType.isNothing())
-                setFunctionNoReturn(function)
-            function
-        }
-
-        // TODO: do we still need it?
-        if (!context.shouldOptimize()) {
-            LLVMAddTargetDependentFunctionAttr(llvmFunction, "no-frame-pointer-elim", "true")
-        }
-
-        this.functions[declaration] = FunctionLlvmDeclarations(llvmFunction)
-    }
 }

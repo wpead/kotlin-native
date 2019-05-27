@@ -72,7 +72,8 @@ internal class ObjCExport(val context: Context, symbolTable: SymbolTable) {
     }
 
     internal fun generate(codegen: CodeGenerator) {
-        if (target.family != Family.IOS && target.family != Family.OSX) return
+        return
+//        if (target.family != Family.IOS && target.family != Family.OSX) return
 
         if (!context.config.produce.isNativeBinary) return // TODO: emit RTTI to the same modules as classes belong to.
 

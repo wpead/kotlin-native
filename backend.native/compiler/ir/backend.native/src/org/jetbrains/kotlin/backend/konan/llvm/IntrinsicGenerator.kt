@@ -2,6 +2,7 @@ package org.jetbrains.kotlin.backend.konan.llvm
 
 import kotlinx.cinterop.cValuesOf
 import llvm.*
+import org.jetbrains.kotlin.backend.konan.Context
 import org.jetbrains.kotlin.backend.konan.descriptors.TypedIntrinsic
 import org.jetbrains.kotlin.backend.konan.descriptors.isTypedIntrinsic
 import org.jetbrains.kotlin.backend.konan.llvm.objc.genObjCSelector
@@ -120,9 +121,11 @@ private fun getIntrinsicType(callSite: IrFunctionAccessExpression): IntrinsicTyp
 
 internal class IntrinsicGenerator(private val environment: IntrinsicGeneratorEnvironment) {
 
-    private val codegen = environment.codegen
+    private val codegen: CodeGenerator
+        get() = environment.codegen
 
-    private val context = codegen.context
+    private val context: Context
+        get() = codegen.context
 
     private val IrCall.llvmReturnType: LLVMTypeRef
         get() = LLVMGetReturnType(codegen.getLlvmFunctionType(symbol.owner))!!
@@ -142,7 +145,7 @@ internal class IntrinsicGenerator(private val environment: IntrinsicGeneratorEnv
             IntrinsicType.IMMUTABLE_BLOB -> {
                 @Suppress("UNCHECKED_CAST")
                 val arg = callSite.getValueArgument(0) as IrConst<String>
-                context.llvm.staticData.createImmutableBlob(arg)
+                codegen.fileModuleGenerator.staticData.createImmutableBlob(arg)
             }
             IntrinsicType.OBJC_INIT_BY -> {
                 val receiver = environment.evaluateExpression(callSite.extensionReceiver!!)
@@ -287,7 +290,7 @@ internal class IntrinsicGenerator(private val environment: IntrinsicGeneratorEnv
         // however `vararg` is immutable, and in current implementation it has type `Array<E>`,
         // so let's ignore this mismatch currently for simplicity.
 
-        return context.llvm.staticData.createConstArrayList(array, length).llvm
+        return codegen.fileModuleGenerator.staticData.createConstArrayList(array, length).llvm
     }
 
     private fun FunctionGenerationContext.emitGetNativeNullPtr(): LLVMValueRef =
@@ -460,12 +463,12 @@ internal class IntrinsicGenerator(private val environment: IntrinsicGeneratorEnv
         val functionType = functionType(int8TypePtr, true, int8TypePtr, int8TypePtr)
 
         val libobjc = context.standardLlvmSymbolsOrigin
-        val normalMessenger = context.llvm.externalFunction(
+        val normalMessenger = codegen.fileModuleGenerator.llvm.externalFunction(
                 "objc_msgSend$messengerNameSuffix",
                 functionType,
                 origin = libobjc
         )
-        val superMessenger = context.llvm.externalFunction(
+        val superMessenger = codegen.fileModuleGenerator.llvm.externalFunction(
                 "objc_msgSendSuper$messengerNameSuffix",
                 functionType,
                 origin = libobjc

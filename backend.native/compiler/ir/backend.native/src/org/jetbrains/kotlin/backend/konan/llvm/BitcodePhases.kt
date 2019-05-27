@@ -21,7 +21,6 @@ internal val contextLLVMSetupPhase = makeKonanModuleOpPhase(
             // used to compile runtime.bc.
             context.composer.initialize()
             context.debugInfo.builder = DICreateBuilder(context.composer.getGlobalLlvmModule())
-            context.llvmDeclarations = createLlvmDeclarations(context)
             context.lifetimes = mutableMapOf()
             context.codegenVisitor = CodeGeneratorVisitor(context, context.lifetimes)
         }
@@ -30,7 +29,7 @@ internal val contextLLVMSetupPhase = makeKonanModuleOpPhase(
 internal val RTTIPhase = makeKonanModuleOpPhase(
         name = "RTTI",
         description = "RTTI generation",
-        op = { context, irModule -> irModule.acceptVoid(RTTIGeneratorVisitor(context)) }
+        op = { context, irModule -> {} }
 )
 
 internal val generateDebugInfoHeaderPhase = makeKonanModuleOpPhase(

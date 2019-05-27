@@ -74,7 +74,7 @@ internal class ObjCDataGenerator(val codegen: CodeGenerator) {
         val globalName = prefix + name
 
         // TODO: refactor usages and use [Global] class.
-        val llvmGlobal = LLVMGetNamedGlobal(context.llvmModule, globalName) ?:
+        val llvmGlobal = LLVMGetNamedGlobal(codegen.llvmModule, globalName) ?:
                 codegen.importGlobal(globalName, classObjectType, CurrentKonanModuleOrigin)
 
         return constPointer(llvmGlobal)
@@ -121,7 +121,7 @@ internal class ObjCDataGenerator(val codegen: CodeGenerator) {
             )
 
             val globalName = "\u0001l_OBJC_\$_INSTANCE_METHODS_$name"
-            val global = context.llvm.staticData.placeGlobal(globalName, methodList).also {
+            val global = codegen.fileModuleGenerator.staticData.placeGlobal(globalName, methodList).also {
                 it.setLinkage(LLVMLinkage.LLVMPrivateLinkage)
                 it.setAlignment(runtime.pointerAlignment)
                 it.setSection("__DATA, __objc_const")
@@ -170,7 +170,7 @@ internal class ObjCDataGenerator(val codegen: CodeGenerator) {
                 "\u0001l_OBJC_CLASS_RO_\$_"
             } + name
 
-            val roGlobal = context.llvm.staticData.placeGlobal(roLabel, roValue).also {
+            val roGlobal = codegen.fileModuleGenerator.staticData.placeGlobal(roLabel, roValue).also {
                 it.setLinkage(LLVMLinkage.LLVMPrivateLinkage)
                 it.setAlignment(runtime.pointerAlignment)
                 it.setSection("__DATA, __objc_const")
@@ -228,7 +228,7 @@ internal class ObjCDataGenerator(val codegen: CodeGenerator) {
     private fun addModuleClassList(elements: List<ConstPointer>, name: String, section: String) {
         if (elements.isEmpty()) return
 
-        val global = context.llvm.staticData.placeGlobalArray(
+        val global = codegen.fileModuleGenerator.staticData.placeGlobalArray(
                 name,
                 int8TypePtr,
                 elements.map { it.bitcast(int8TypePtr) }
@@ -261,7 +261,7 @@ internal class ObjCDataGenerator(val codegen: CodeGenerator) {
 
         fun get(value: String) = literals.getOrPut(value) {
             val bytes = value.toByteArray(Charsets.UTF_8).map { Int8(it) } + Int8(0)
-            val global = context.globalLlvm.staticData.placeGlobalArray(label, int8Type, bytes)
+            val global = codegen.fileModuleGenerator.staticData.placeGlobalArray(label, int8Type, bytes)
 
             global.setConstant(true)
             global.setLinkage(LLVMLinkage.LLVMPrivateLinkage)

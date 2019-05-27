@@ -160,12 +160,12 @@ private class ExportedElementScope(val kind: ScopeKind, val name: String) {
     }
 
     fun generateCAdapters() {
-        elements.forEach {
-            it.generateCAdapter()
-        }
-        scopes.forEach {
-            it.generateCAdapters()
-        }
+//        elements.forEach {
+//            it.generateCAdapter()
+//        }
+//        scopes.forEach {
+//            it.generateCAdapters()
+//        }
     }
 
     fun scopeUniqueName(descriptor: DeclarationDescriptor, shortName: Boolean): String {
@@ -189,7 +189,7 @@ private class ExportedElementScope(val kind: ScopeKind, val name: String) {
 private class ExportedElement(val kind: ElementKind,
                               val scope: ExportedElementScope,
                               val declaration: DeclarationDescriptor,
-                              val owner: CAdapterGenerator) : ContextUtils {
+                              val owner: CAdapterGenerator) {
     init {
         scope.elements.add(this)
     }
@@ -203,7 +203,7 @@ private class ExportedElement(val kind: ElementKind,
         return "$kind: $name (aliased to $cname)"
     }
 
-    override val context = owner.context
+     val context = owner.context
 
     fun generateCAdapter() {
         when {
