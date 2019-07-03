@@ -6,6 +6,9 @@ package org.jetbrains.kotlin.native.interop.gen
 
 import org.jetbrains.kotlin.native.interop.gen.jvm.KotlinPlatform
 import org.jetbrains.kotlin.native.interop.indexer.ObjCProtocol
+import org.jetbrains.kotlin.native.interop.indexer.RecordType
+import org.jetbrains.kotlin.native.interop.indexer.VoidType
+import org.jetbrains.kotlin.native.interop.indexer.unwrapTypedefs
 import org.jetbrains.kotlin.utils.addToStdlib.firstIsInstanceOrNull
 
 class BridgeBuilderResult(
@@ -15,6 +18,44 @@ class BridgeBuilderResult(
         val functionBridgeBodies: Map<FunctionStub, List<String>>,
         val excludedStubs: Set<StubIrElement>
 )
+
+private data class CCalleeWrapper(val name: String, val lines: List<String>)
+
+/**
+ * Some functions doesn't have an address (e.g. macros-based or builtins).
+ * To solve this problem we generate a wrapper function.
+ */
+private fun generateCCalleeWrapper(cCallSymbolName: String, origin: StubOrigin.Function): CCalleeWrapper =
+        if (origin.function.isVararg) {
+            CCalleeWrapper(origin.function.name, emptyList())
+        } else {
+            val function = origin.function
+            val wrapperName = "${cCallSymbolName}_wrapper"
+            val returnType = function.returnType.getStringRepresentation()
+            val parameters = function.parameters.mapIndexed { index, parameter ->
+                val parameterName = parameter.name
+                val name = if (parameterName == null || parameterName.isEmpty()) {
+                    "p$index"
+                } else {
+                    parameterName
+                }
+                name to parameter.type.getStringRepresentation()
+            }
+
+            val callExpression = "${function.name}(${parameters.joinToString { it.first }});"
+            val wrapperBody = if (function.returnType is VoidType) {
+                callExpression
+            } else {
+                "return $callExpression"
+            }
+
+            val lines = listOf(
+                    "$returnType $wrapperName(${parameters.joinToString { "${it.second} ${it.first}" }}) {",
+                    wrapperBody,
+                    "}"
+            )
+            CCalleeWrapper(wrapperName, lines)
+        }
 
 /**
  * Generates [NativeBridges] and corresponding function bodies and property accessors.
@@ -103,12 +144,17 @@ class StubIrBridgeBuilder(
                     ?: return
             val cCallAnnotation = function.annotations.firstIsInstanceOrNull<AnnotationStub.CCall.Symbol>()
                     ?: return
+
             val cCallSymbolName = cCallAnnotation.symbolName
+            val (wrapperName, wrapperLines) = generateCCalleeWrapper(cCallSymbolName, origin)
             simpleBridgeGenerator.insertNativeBridge(
                     function,
                     emptyList(),
-                    listOf("extern const void* $cCallSymbolName __asm(${cCallSymbolName.quoteAsKotlinLiteral()});",
-                            "extern const void* $cCallSymbolName = &${origin.function.name};")
+                    listOf(
+                        *wrapperLines.toTypedArray(),
+                        "extern const void* $cCallSymbolName __asm(${cCallSymbolName.quoteAsKotlinLiteral()});",
+                        "extern const void* $cCallSymbolName = &$wrapperName;"
+                    )
             )
         }
 
@@ -226,6 +272,7 @@ class StubIrBridgeBuilder(
     }
 
     private fun generateBridgeBody(function: FunctionStub) {
+        assert(context.platform == KotlinPlatform.JVM) { "Function ${function.name} was not marked as external." }
         assert(function.origin is StubOrigin.Function) { "Can't create bridge for ${function.name}" }
         val origin = function.origin as StubOrigin.Function
         val bodyGenerator = KotlinCodeBuilder(scope = kotlinFile)
