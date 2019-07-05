@@ -526,6 +526,10 @@ class StubIrTextEmitter(
             "@Deprecated(${annotationStub.message.quoteAsKotlinLiteral()}, " +
                     "ReplaceWith(${annotationStub.replaceWith.quoteAsKotlinLiteral()}), " +
                     "DeprecationLevel.ERROR)"
+        is AnnotationStub.ReadBits ->
+            "@CCall.ReadBits(${annotationStub.offset}, ${annotationStub.size}, ${annotationStub.signed})"
+        is AnnotationStub.WriteBits ->
+            "@CCall.WriteBits(${annotationStub.offset}, ${annotationStub.size})"
     }
 
     private fun renderEnumEntry(enumEntryStub: EnumEntryStub): String =

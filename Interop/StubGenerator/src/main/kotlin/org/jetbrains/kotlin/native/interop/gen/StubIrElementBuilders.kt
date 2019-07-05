@@ -108,12 +108,19 @@ internal class StructStubBuilder(
             val typeInfo = typeMirror.info
             val kotlinType = typeMirror.argType
             val signed = field.type.isIntegerTypeSigned()
-            val readBits = PropertyAccessor.Getter.ReadBits(field.offset, field.size, signed)
-            val writeBits = PropertyAccessor.Setter.WriteBits(field.offset, field.size)
-            // TODO: Use something instead of [GlobalGetterBridgeInfo].
-            context.bridgeComponentsBuilder.getterToBridgeInfo[readBits] = BridgeGenerationComponents.GlobalGetterBridgeInfo("", typeInfo, false)
-            context.bridgeComponentsBuilder.setterToBridgeInfo[writeBits] = BridgeGenerationComponents.GlobalSetterBridgeInfo("", typeInfo)
-            val kind = PropertyStub.Kind.Var(readBits, writeBits)
+            val getter: PropertyAccessor.Getter
+            val setter: PropertyAccessor.Setter
+            if (platform == KotlinPlatform.JVM) {
+                getter = PropertyAccessor.Getter.ReadBits(field.offset, field.size, signed)
+                setter = PropertyAccessor.Setter.WriteBits(field.offset, field.size)
+                // TODO: Use something instead of [GlobalGetterBridgeInfo].
+                context.bridgeComponentsBuilder.getterToBridgeInfo[getter] = BridgeGenerationComponents.GlobalGetterBridgeInfo("", typeInfo, false)
+                context.bridgeComponentsBuilder.setterToBridgeInfo[setter] = BridgeGenerationComponents.GlobalSetterBridgeInfo("", typeInfo)
+            } else {
+                getter = PropertyAccessor.Getter.ExternalGetter(listOf(AnnotationStub.ReadBits(field.offset, field.size, signed)))
+                setter = PropertyAccessor.Setter.ExternalSetter(listOf(AnnotationStub.WriteBits(field.offset, field.size)))
+            }
+            val kind = PropertyStub.Kind.Var(getter, setter)
             PropertyStub(field.name, WrapperStubType(kotlinType), kind)
         }
 

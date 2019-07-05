@@ -26,4 +26,12 @@ public annotation class CCall(val id: String) {
     @Target(AnnotationTarget.VALUE_PARAMETER)
     @Retention(AnnotationRetention.BINARY)
     annotation class Consumed
+
+    @Target(AnnotationTarget.PROPERTY_GETTER)
+    @Retention(AnnotationRetention.BINARY)
+    annotation class ReadBits(val offset: Long, val size: Int, val signed: Boolean)
+
+    @Target(AnnotationTarget.PROPERTY_SETTER)
+    @Retention(AnnotationRetention.BINARY)
+    annotation class WriteBits(val offset: Long, val size: Int)
 }

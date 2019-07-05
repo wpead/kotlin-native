@@ -846,6 +846,11 @@ private class InteropTransformer(val context: Context, override val irFile: IrFi
             return generateWithStubs { generateCCall(expression, builder, isInvoke = false) }
         }
 
+        // TODO: correctly recognize:
+        run {
+
+        }
+
         val intrinsicType = tryGetIntrinsicType(expression)
 
         if (intrinsicType != null) {

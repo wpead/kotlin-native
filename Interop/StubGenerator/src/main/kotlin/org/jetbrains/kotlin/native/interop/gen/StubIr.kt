@@ -161,6 +161,10 @@ sealed class AnnotationStub {
     class CLength(val length: Long) : AnnotationStub()
 
     class Deprecated(val message: String, val replaceWith: String) : AnnotationStub()
+
+    // TODO: Move under CCall
+    class ReadBits(val offset: Long, val size: Int, val signed: Boolean) : AnnotationStub()
+    class WriteBits(val offset: Long, val size: Int): AnnotationStub()
 }
 
 /**
