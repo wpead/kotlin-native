@@ -33,15 +33,8 @@ private fun generateCCalleeWrapper(cCallSymbolName: String, origin: StubOrigin.F
             val wrapperName = "${cCallSymbolName}_wrapper"
             val returnType = function.returnType.getStringRepresentation()
             val parameters = function.parameters.mapIndexed { index, parameter ->
-                val parameterName = parameter.name
-                val name = if (parameterName == null || parameterName.isEmpty()) {
-                    "p$index"
-                } else {
-                    parameterName
-                }
-                name to parameter.type.getStringRepresentation()
+                "p$index" to parameter.type.getStringRepresentation()
             }
-
             val callExpression = "${function.name}(${parameters.joinToString { it.first }});"
             val wrapperBody = if (function.returnType is VoidType) {
                 callExpression
@@ -49,8 +42,9 @@ private fun generateCCalleeWrapper(cCallSymbolName: String, origin: StubOrigin.F
                 "return $callExpression"
             }
 
+            val alwaysInline = "__attribute__((always_inline))"
             val lines = listOf(
-                    "$returnType $wrapperName(${parameters.joinToString { "${it.second} ${it.first}" }}) {",
+                    "$alwaysInline $returnType $wrapperName(${parameters.joinToString { "${it.second} ${it.first}" }}) {",
                     wrapperBody,
                     "}"
             )
@@ -153,7 +147,7 @@ class StubIrBridgeBuilder(
                     listOf(
                         *wrapperLines.toTypedArray(),
                         "extern const void* $cCallSymbolName __asm(${cCallSymbolName.quoteAsKotlinLiteral()});",
-                        "extern const void* $cCallSymbolName = &$wrapperName;"
+                        "const void* $cCallSymbolName = &$wrapperName;"
                     )
             )
         }

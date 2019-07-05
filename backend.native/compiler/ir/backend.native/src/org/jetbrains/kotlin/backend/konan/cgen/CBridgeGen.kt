@@ -934,6 +934,7 @@ private class StructValuePassing(private val kotlinClass: IrClass, override val 
         bridgeCallBuilder.prepare += kotlinPointed
 
         val cPointer = passThroughBridge(irGet(kotlinPointed), kotlinPointedType, CTypes.pointer(cType))
+        // We use `memcpy` instead of assignment because struct may have const fields. See KT-28102.
         val kniStructResult = "kniStructResult"
         cBridgeBodyLines += "${cType.render(kniStructResult)} = $expression;"
         cBridgeBodyLines += "memcpy(${cPointer.name}, &$kniStructResult, sizeof($kniStructResult));"
