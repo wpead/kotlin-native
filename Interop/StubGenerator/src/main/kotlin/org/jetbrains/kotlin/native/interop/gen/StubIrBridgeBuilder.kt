@@ -22,7 +22,7 @@ class BridgeBuilderResult(
 private data class CCalleeWrapper(val name: String, val lines: List<String>)
 
 /**
- * Some functions doesn't have an address (e.g. macros-based or builtins).
+ * Some functions don't have an address (e.g. macros-based or builtins).
  * To solve this problem we generate a wrapper function.
  */
 private fun generateCCalleeWrapper(cCallSymbolName: String, origin: StubOrigin.Function): CCalleeWrapper =

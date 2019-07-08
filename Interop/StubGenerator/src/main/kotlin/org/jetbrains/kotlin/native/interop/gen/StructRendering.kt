@@ -1,4 +1,4 @@
-package org.jetbrains.kotlin.native.interop.gen
+    package org.jetbrains.kotlin.native.interop.gen
 
 import org.jetbrains.kotlin.native.interop.indexer.*
 
@@ -26,7 +26,8 @@ private fun tryRenderStruct(def: StructDef): String? {
 
                     offset = it.offsetBytes + it.typeSize
 
-                    tryRenderVar(it.type, name)
+                    // We omit `const` qualifier to make `CBridgeGen` simpler. See KT-28102.
+                    tryRenderVar(it.type, name, shouldOmitConstQualifier = true)
                             ?.plus(if (alignment == defaultAlignment) "" else "__attribute__((aligned($alignment)))")
                 }
 
@@ -62,7 +63,7 @@ private fun tryRenderUnion(def: StructDef): String? =
 
         }
 
-private fun tryRenderVar(type: Type, name: String): String? = when (type) {
+private fun tryRenderVar(type: Type, name: String, shouldOmitConstQualifier: Boolean = false): String? = when (type) {
     CharType, is BoolType -> "char $name"
     is IntegerType -> "${type.spelling} $name"
     is FloatingType -> "${type.spelling} $name"
@@ -74,7 +75,7 @@ private fun tryRenderVar(type: Type, name: String): String? = when (type) {
     is Typedef -> tryRenderVar(type.def.aliased, name)
     is ObjCPointer -> "void* $name"
     else -> null
-}
+}?.let { if (shouldOmitConstQualifier) it.substringAfterLast("const ") else it }
 
 private val Field.offsetBytes: Long get() {
     require(this.offset % 8 == 0L)
