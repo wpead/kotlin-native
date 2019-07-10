@@ -249,19 +249,25 @@ internal val IrClass.isFrozen: Boolean
 
 fun IrConstructorCall.getAnnotationValue() = (getValueArgument(0) as? IrConst<String>)?.value
 
-fun IrConstructorCall.getStringValue(name: String): String {
+fun IrConstructorCall.getStringValue(name: String): String = getValue(name)
+
+inline fun <reified T> IrConstructorCall.getValue(name: String): T {
     val parameter = symbol.owner.valueParameters.single { it.name.asString() == name }
-    return (getValueArgument(parameter.index) as IrConst<String>).value
+    return (getValueArgument(parameter.index) as IrConst<T>).value
 }
+
+private val supportedAnnotations = setOf(
+        KonanFqNames.objCMethod,
+        KonanFqNames.typedIntrinsic,
+        RuntimeNames.cCall,
+        RuntimeNames.cCallWriteBits,
+        RuntimeNames.cCallReadBits
+)
 
 fun IrFunction.externalSymbolOrThrow(): String? {
     annotations.findAnnotation(RuntimeNames.symbolNameAnnotation)?.let { return it.getAnnotationValue() }
 
-    if (annotations.hasAnnotation(KonanFqNames.objCMethod)) return null
-
-    if (annotations.hasAnnotation(KonanFqNames.typedIntrinsic)) return null
-
-    if (annotations.hasAnnotation(RuntimeNames.cCall)) return null
+    if (supportedAnnotations.any { annotations.hasAnnotation(it) }) return null
 
     throw Error("external function ${this.longName} must have @TypedIntrinsic, @SymbolName or @ObjCMethod annotation")
 }

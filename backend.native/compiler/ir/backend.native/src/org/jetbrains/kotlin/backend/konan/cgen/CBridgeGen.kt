@@ -12,8 +12,10 @@ import org.jetbrains.kotlin.backend.common.lower.at
 import org.jetbrains.kotlin.backend.common.lower.irNot
 import org.jetbrains.kotlin.backend.konan.PrimitiveBinaryType
 import org.jetbrains.kotlin.backend.konan.RuntimeNames
+import org.jetbrains.kotlin.backend.konan.descriptors.getValue
 import org.jetbrains.kotlin.backend.konan.ir.*
 import org.jetbrains.kotlin.backend.konan.isObjCMetaClass
+import org.jetbrains.kotlin.backend.konan.lower.irConvertInteger
 import org.jetbrains.kotlin.builtins.UnsignedType
 import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.descriptors.Modality
@@ -595,6 +597,10 @@ private fun IrValueParameter.isConsumed() = hasCCallAnnotation("Consumed")
 private fun IrSimpleFunction.consumesReceiver() = hasCCallAnnotation("ConsumesReceiver")
 
 private fun IrSimpleFunction.returnsRetained() = hasCCallAnnotation("ReturnsRetained")
+
+private fun IrSimpleFunction.isReadBits() = hasCCallAnnotation("ReadBits")
+
+private fun IrSimpleFunction.isWriteBits() = hasCCallAnnotation("WriteBits")
 
 private fun getStructSpelling(kotlinClass: IrClass): String? =
         kotlinClass.getAnnotationArgumentValue(FqName("kotlinx.cinterop.internal.CStruct"), "spelling")
@@ -1429,4 +1435,60 @@ private fun KotlinStubs.reportUnsupportedType(reason: String, type: IrType, loca
 
     reportError(location.element, "type ${type.toKotlinType()}$typeLocation is not supported here" +
             if (reason.isNotEmpty()) ": $reason" else "")
+}
+
+
+
+
+private data class ReadBitsArguments(val offset: Long, val size: Int, val signed: Boolean)
+
+private fun extractReadBitsArguments(readBitsAnnotation: IrConstructorCall) = ReadBitsArguments(
+        readBitsAnnotation.getValue("offset"),
+        readBitsAnnotation.getValue("size"),
+        readBitsAnnotation.getValue("signed")
+)
+
+internal fun KotlinStubs.generateReadBitsCall(expression: IrCall, irBuilder: IrBuilderWithScope): IrExpression {
+    val readBitsAnnotation = expression.symbol.owner.annotations.findAnnotation(RuntimeNames.cCallReadBits)!!
+    val (offset, size, signed) = extractReadBitsArguments(readBitsAnnotation)
+    val receiver = expression.dispatchReceiver!!
+    return with (irBuilder) {
+        val call = irCall(symbols.interopReadBits.owner).apply {
+            putValueArgument(0, irCall(symbols.interopNativePointedRawPtr).apply { dispatchReceiver = receiver })
+            putValueArgument(1, irLong(offset))
+            putValueArgument(2, irInt(size))
+            putValueArgument(3, irBoolean(signed))
+        }
+        val targetClass = expression.symbol.owner.returnType.classOrNull ?: error("")
+        assert(targetClass in symbols.allIntegerClasses)
+        irConvertInteger(symbols, symbols.long, targetClass, call)
+    }
+}
+
+private data class WriteBitsArguments(val offset: Long, val size: Int)
+
+private fun extractWriteBitsArguments(writeBitsAnnotation: IrConstructorCall) = WriteBitsArguments(
+        writeBitsAnnotation.getValue("offset"),
+        writeBitsAnnotation.getValue("size")
+)
+
+internal fun KotlinStubs.generateWriteBitsCall(expression: IrCall, irBuilder: IrBuilderWithScope): IrExpression {
+    val writeBitsAnnotation = expression.symbol.owner.annotations.findAnnotation(RuntimeNames.cCallWriteBits)!!
+    val (offset, size) = extractWriteBitsArguments(writeBitsAnnotation)
+    val receiver = expression.dispatchReceiver!!
+
+    return with (irBuilder) {
+        val conversion = run {
+            val value = expression.getValueArgument(0)!!
+            val sourceClass = value.type.classOrNull ?: error("")
+            assert(sourceClass in symbols.allIntegerClasses)
+            irConvertInteger(symbols, sourceClass, symbols.long, value)
+        }
+        irCall(symbols.interopWriteBits.owner).apply {
+            putValueArgument(0, irCall(symbols.interopNativePointedRawPtr).apply { dispatchReceiver = receiver })
+            putValueArgument(1, irLong(offset))
+            putValueArgument(2, irInt(size))
+            putValueArgument(3, conversion)
+        }
+    }
 }

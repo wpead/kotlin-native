@@ -1883,7 +1883,7 @@ internal class CodeGeneratorVisitor(val context: Context, val lifetimes: Map<IrE
         val allValueParameters = expression.descriptor.allParameters
 
         return allValueParameters.dropWhile { it !in evaluatedArgs }.map {
-            evaluatedArgs[it]!!
+            evaluatedArgs.getValue(it)
         }
     }
 

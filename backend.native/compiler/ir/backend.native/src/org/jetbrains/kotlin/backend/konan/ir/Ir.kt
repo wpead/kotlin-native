@@ -172,6 +172,11 @@ internal class KonanSymbols(context: Context, private val symbolTable: SymbolTab
 
     val interopObjCGetSelector = interopFunction("objCGetSelector")
 
+    val interopReadBits = interopFunction("readBits")
+    val interopWriteBits = interopFunction("writeBits")
+    val interopNativePointedRawPtr =
+            symbolTable.referenceSimpleFunction(context.interopBuiltIns.nativePointedRawPtrGetter)
+
     val objCExportTrapOnUndeclaredException =
             symbolTable.referenceSimpleFunction(context.builtIns.kotlinNativeInternal.getContributedFunctions(
                     Name.identifier("trapOnUndeclaredException"),

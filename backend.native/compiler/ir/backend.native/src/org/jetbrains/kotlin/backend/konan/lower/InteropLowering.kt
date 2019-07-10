@@ -26,7 +26,6 @@ import org.jetbrains.kotlin.backend.konan.llvm.tryGetIntrinsicType
 import org.jetbrains.kotlin.builtins.UnsignedTypes
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
-import org.jetbrains.kotlin.descriptors.annotations.Annotations
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.builders.*
@@ -47,6 +46,22 @@ import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.resolve.OverridingUtil
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
+
+internal fun IrBuilderWithScope.irConvertInteger(
+        symbols: KonanSymbols,
+        source: IrClassSymbol,
+        target: IrClassSymbol,
+        value: IrExpression
+): IrExpression {
+    val conversion = symbols.integerConversions.getValue(source to target)
+    return irCall(conversion.owner).apply {
+        if (conversion.owner.dispatchReceiverParameter != null) {
+            dispatchReceiver = value
+        } else {
+            extensionReceiver = value
+        }
+    }
+}
 
 internal abstract class BaseInteropIrTransformer(private val context: Context) : IrBuildingTransformer(context) {
 
@@ -841,14 +856,17 @@ private class InteropTransformer(val context: Context, override val irFile: IrFi
             }
         }
 
+        // TODO: Use matchers instead
+
         if (function.annotations.hasAnnotation(RuntimeNames.cCall)) {
             context.llvmImports.add(function.descriptor.llvmSymbolOrigin)
             return generateWithStubs { generateCCall(expression, builder, isInvoke = false) }
         }
-
-        // TODO: correctly recognize:
-        run {
-
+        if (function.annotations.hasAnnotation(RuntimeNames.cCallReadBits)) {
+            return generateWithStubs { generateReadBitsCall(expression, builder) }
+        }
+        if (function.annotations.hasAnnotation(RuntimeNames.cCallWriteBits)) {
+            return generateWithStubs { generateWriteBitsCall(expression, builder) }
         }
 
         val intrinsicType = tryGetIntrinsicType(expression)
@@ -1052,16 +1070,7 @@ private class InteropTransformer(val context: Context, override val irFile: IrFi
             source: IrClassSymbol,
             target: IrClassSymbol,
             value: IrExpression
-    ): IrExpression {
-        val conversion = symbols.integerConversions[source to target]!!
-        return irCall(conversion.owner).apply {
-            if (conversion.owner.dispatchReceiverParameter != null) {
-                dispatchReceiver = value
-            } else {
-                extensionReceiver = value
-            }
-        }
-    }
+    ): IrExpression = irConvertInteger(symbols, source, target, value)
 
     private fun IrType.ensureSupportedInCallbacks(isReturnType: Boolean, reportError: (String) -> Nothing) {
         this.checkCTypeNullability(reportError)
