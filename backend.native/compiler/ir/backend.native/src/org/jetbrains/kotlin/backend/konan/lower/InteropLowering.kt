@@ -28,6 +28,7 @@ import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.IrStatement
+import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrFunctionImpl
@@ -150,6 +151,7 @@ internal class InteropLoweringPart1(val context: Context) : BaseInteropIrTransfo
     private val outerClasses = mutableListOf<IrClass>()
 
     override fun visitClass(declaration: IrClass): IrStatement {
+
         if (declaration.isKotlinObjCClass()) {
             lowerKotlinObjCClass(declaration)
         }

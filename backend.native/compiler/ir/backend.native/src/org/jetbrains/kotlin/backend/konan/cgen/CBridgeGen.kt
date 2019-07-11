@@ -1,5 +1,6 @@
 package org.jetbrains.kotlin.backend.konan.cgen
 
+import org.jetbrains.kotlin.backend.common.atMostOne
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedClassConstructorDescriptor
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedClassDescriptor
 import org.jetbrains.kotlin.backend.common.descriptors.WrappedSimpleFunctionDescriptor
@@ -1460,8 +1461,21 @@ internal fun KotlinStubs.generateReadBitsCall(expression: IrCall, irBuilder: IrB
             putValueArgument(3, irBoolean(signed))
         }
         val targetClass = expression.symbol.owner.returnType.classOrNull ?: error("")
-        assert(targetClass in symbols.allIntegerClasses)
-        irConvertInteger(symbols, symbols.long, targetClass, call)
+        when {
+            targetClass in symbols.allIntegerClasses -> irConvertInteger(symbols, symbols.long, targetClass, call)
+            expression.symbol.owner.returnType.isCEnumType() -> {
+                val companion: IrClass = targetClass.owner.declarations.filterIsInstance<IrClass>().atMostOne { it.isCompanion }!!
+                val byValueFunc = companion.declarations
+                        .filterIsInstance<IrFunction>()
+                        .single { it.name.asString() == "byValue" }
+                irCall(byValueFunc).apply {
+                    dispatchReceiver = irGetObjectValue(companion.defaultType, companion.symbol)
+                    putValueArgument(0, irConvertInteger(symbols, symbols.long, byValueFunc.valueParameters[0].type.classOrNull ?: error(""), call))
+                }
+            }
+            else -> error("Unexpected target class: ${targetClass.descriptor.name}")
+        }
+
     }
 }
 
@@ -1481,8 +1495,19 @@ internal fun KotlinStubs.generateWriteBitsCall(expression: IrCall, irBuilder: Ir
         val conversion = run {
             val value = expression.getValueArgument(0)!!
             val sourceClass = value.type.classOrNull ?: error("")
-            assert(sourceClass in symbols.allIntegerClasses)
-            irConvertInteger(symbols, sourceClass, symbols.long, value)
+            when {
+                sourceClass in symbols.allIntegerClasses -> irConvertInteger(symbols, sourceClass, symbols.long, value)
+                value.type.isCEnumType() -> {
+                    val enumValueGetter = sourceClass.owner.declarations
+                            .filterIsInstance<IrProperty>()
+                            .single { it.name.asString() == "value" }.getter!!
+
+                    val enumValue = irCall(enumValueGetter).apply { dispatchReceiver = value }
+                    irConvertInteger(symbols, enumValue.type.classOrNull ?: error(""), symbols.long, enumValue)
+                }
+                else -> error("Unexpected source class: ${sourceClass.descriptor.name}")
+            }
+
         }
         irCall(symbols.interopWriteBits.owner).apply {
             putValueArgument(0, irCall(symbols.interopNativePointedRawPtr).apply { dispatchReceiver = receiver })
