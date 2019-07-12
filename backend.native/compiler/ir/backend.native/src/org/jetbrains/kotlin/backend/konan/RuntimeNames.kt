@@ -10,9 +10,14 @@ object RuntimeNames {
     val exportForCompilerAnnotation = FqName("kotlin.native.internal.ExportForCompiler")
     val exportTypeInfoAnnotation = FqName("kotlin.native.internal.ExportTypeInfo")
     val cCall = FqName("kotlinx.cinterop.internal.CCall")
+
     // TODO: Remove
     val cCallReadBits = FqName("kotlinx.cinterop.internal.CCall.ReadBits")
     val cCallWriteBits = FqName("kotlinx.cinterop.internal.CCall.WriteBits")
+
+    val cCallGetMemberAt = FqName("kotlinx.cinterop.internal.CCall.GetMemberAt")
+    val cCallSetMemberAt = FqName("kotlinx.cinterop.internal.CCall.SetMemberAt")
+
     val objCMethodAnnotation = FqName("kotlinx.cinterop.ObjCMethod")
     val objCMethodImp = FqName("kotlinx.cinterop.ObjCMethodImp")
     val independent = FqName("kotlin.native.internal.Independent")

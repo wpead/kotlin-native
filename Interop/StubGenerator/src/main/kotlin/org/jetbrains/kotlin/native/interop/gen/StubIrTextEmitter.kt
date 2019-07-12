@@ -255,6 +255,11 @@ class StubIrTextEmitter(
             }
             val header = "$receiver$name: ${renderStubType(element.type)}"
 
+            if (element.kind is PropertyStub.Kind.LateinitVar) {
+                out("private lateinit var $header")
+                return
+            }
+
             if (element.kind is PropertyStub.Kind.Val && !nativeBridges.isSupported(element.kind.getter)
                     || element.kind is PropertyStub.Kind.Var && !nativeBridges.isSupported(element.kind.getter)) {
                 out(annotationForUnableToImport)
@@ -530,6 +535,10 @@ class StubIrTextEmitter(
             "@CCall.ReadBits(${annotationStub.offset}, ${annotationStub.size}, ${annotationStub.signed})"
         is AnnotationStub.WriteBits ->
             "@CCall.WriteBits(${annotationStub.offset}, ${annotationStub.size})"
+        is AnnotationStub.CCall.GetMemberAt ->
+            "@CCall.GetMemberAt(${annotationStub.offset}, ${annotationStub.typeHolderName.quoteAsKotlinLiteral()}, ${annotationStub.isPassedByValue})"
+        is AnnotationStub.CCall.SetMemberAt ->
+            "@CCall.SetMemberAt(${annotationStub.offset}, ${annotationStub.typeHolderName.quoteAsKotlinLiteral()})"
     }
 
     private fun renderEnumEntry(enumEntryStub: EnumEntryStub): String =
@@ -537,7 +546,6 @@ class StubIrTextEmitter(
 
     private fun renderGetter(accessor: PropertyAccessor.Getter): String {
         val annotations = accessor.annotations.joinToString(separator = "") { renderAnnotation(it) + " " }
-
         return annotations + if (accessor is PropertyAccessor.Getter.ExternalGetter) {
             "external get"
         } else {
@@ -567,7 +575,7 @@ class StubIrTextEmitter(
 
         is PropertyAccessor.Getter.MemberAt -> {
             val typeArguments = renderTypeArguments(accessor.typeArguments)
-            val valueAccess = if (accessor.hasValueAccessor) ".value" else ""
+            val valueAccess = if (accessor.isPassedByValue) ".value" else ""
             "memberAt$typeArguments(${accessor.offset})$valueAccess"
         }
 

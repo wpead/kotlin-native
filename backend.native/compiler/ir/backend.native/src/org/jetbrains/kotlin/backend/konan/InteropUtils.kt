@@ -55,6 +55,8 @@ internal class InteropBuiltIns(builtIns: KonanBuiltIns) {
                 TypeUtils.getClassDescriptor(extensionReceiverParameter.type) == cPointer
     }
 
+    val interpretNullablePointed = packageScope.getContributedFunctions("interpretNullablePointed").single()
+
     val cstr = packageScope.getContributedVariables("cstr").single()
     val wcstr = packageScope.getContributedVariables("wcstr").single()
     val memScope = packageScope.getContributedClass("MemScope")

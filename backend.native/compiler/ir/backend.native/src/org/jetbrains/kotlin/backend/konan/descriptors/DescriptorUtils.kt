@@ -6,7 +6,6 @@
 package org.jetbrains.kotlin.backend.konan.descriptors
 
 import org.jetbrains.kotlin.backend.konan.*
-import org.jetbrains.kotlin.backend.konan.descriptors.resolveFakeOverride
 import org.jetbrains.kotlin.backend.konan.ir.*
 import org.jetbrains.kotlin.backend.konan.isObjCClass
 import org.jetbrains.kotlin.backend.konan.llvm.longName
@@ -249,9 +248,9 @@ internal val IrClass.isFrozen: Boolean
 
 fun IrConstructorCall.getAnnotationValue() = (getValueArgument(0) as? IrConst<String>)?.value
 
-fun IrConstructorCall.getStringValue(name: String): String = getValue(name)
+fun IrConstructorCall.getStringValue(name: String): String = getConstantValue(name)
 
-inline fun <reified T> IrConstructorCall.getValue(name: String): T {
+inline fun <reified T> IrConstructorCall.getConstantValue(name: String): T {
     val parameter = symbol.owner.valueParameters.single { it.name.asString() == name }
     return (getValueArgument(parameter.index) as IrConst<T>).value
 }
@@ -261,7 +260,9 @@ private val supportedAnnotations = setOf(
         KonanFqNames.typedIntrinsic,
         RuntimeNames.cCall,
         RuntimeNames.cCallWriteBits,
-        RuntimeNames.cCallReadBits
+        RuntimeNames.cCallReadBits,
+        RuntimeNames.cCallGetMemberAt,
+        RuntimeNames.cCallSetMemberAt
 )
 
 fun IrFunction.externalSymbolOrThrow(): String? {

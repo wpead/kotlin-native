@@ -3,7 +3,6 @@ package org.jetbrains.kotlin.backend.konan
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
-import kotlinx.cinterop.value
 import llvm.*
 import org.jetbrains.kotlin.konan.target.KonanTarget
 

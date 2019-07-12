@@ -871,6 +871,14 @@ private class InteropTransformer(val context: Context, override val irFile: IrFi
             return generateWithStubs { generateWriteBitsCall(expression, builder) }
         }
 
+        if (function.annotations.hasAnnotation(RuntimeNames.cCallGetMemberAt)) {
+            return generateWithStubs { generateGetMemberAt(expression, builder) }
+        }
+
+        if (function.annotations.hasAnnotation(RuntimeNames.cCallSetMemberAt)) {
+            return generateWithStubs { generateSetMemberAt(expression, builder) }
+        }
+
         val intrinsicType = tryGetIntrinsicType(expression)
 
         if (intrinsicType != null) {

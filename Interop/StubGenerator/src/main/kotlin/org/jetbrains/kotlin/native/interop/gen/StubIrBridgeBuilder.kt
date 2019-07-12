@@ -52,6 +52,14 @@ private fun generateCCalleeWrapper(cCallSymbolName: String, origin: StubOrigin.F
         }
 
 /**
+ * Similar to [generateCCalleeWrapper] we generate wrapper functions to read/write
+ * to global C variable.
+ */
+private fun generateCGlobalWrapper(cGlobalName: String): CCalleeWrapper {
+    TODO()
+}
+
+/**
  * Generates [NativeBridges] and corresponding function bodies and property accessors.
  */
 class StubIrBridgeBuilder(
@@ -184,14 +192,13 @@ class StubIrBridgeBuilder(
                             val getAddressExpression = getGlobalAddressExpression(extra.cGlobalName, accessor)
                             typeInfo.argFromBridged(getAddressExpression, kotlinFile, nativeBacked = accessor) + "!!"
                         } else {
-                            typeInfo.argFromBridged(simpleBridgeGenerator.kotlinToNative(
+                            val expression = simpleBridgeGenerator.kotlinToNative(
                                     nativeBacked = accessor,
                                     returnType = typeInfo.bridgedType,
                                     kotlinValues = emptyList(),
                                     independent = false
-                            ) {
-                                typeInfo.cToBridged(expr = extra.cGlobalName)
-                            }, kotlinFile, nativeBacked = accessor)
+                            ) { typeInfo.cToBridged(expr = extra.cGlobalName) }
+                            typeInfo.argFromBridged(expression, kotlinFile, nativeBacked = accessor)
                         }
                         propertyAccessorBridgeBodies[accessor] = expression
                     }

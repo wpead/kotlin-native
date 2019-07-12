@@ -11,9 +11,10 @@ import org.jetbrains.kotlin.backend.common.ir.createParameterDeclarations
 import org.jetbrains.kotlin.backend.common.ir.simpleFunctions
 import org.jetbrains.kotlin.backend.common.lower.at
 import org.jetbrains.kotlin.backend.common.lower.irNot
+import org.jetbrains.kotlin.backend.konan.Context
 import org.jetbrains.kotlin.backend.konan.PrimitiveBinaryType
 import org.jetbrains.kotlin.backend.konan.RuntimeNames
-import org.jetbrains.kotlin.backend.konan.descriptors.getValue
+import org.jetbrains.kotlin.backend.konan.descriptors.getConstantValue
 import org.jetbrains.kotlin.backend.konan.ir.*
 import org.jetbrains.kotlin.backend.konan.isObjCMetaClass
 import org.jetbrains.kotlin.backend.konan.lower.irConvertInteger
@@ -584,7 +585,7 @@ private fun IrType.isCEnumType(): Boolean {
             .any { (it.classifierOrNull?.owner as? IrClass)?.fqNameForIrSerialization == FqName("kotlinx.cinterop.CEnum") }
 }
 
-// Make sure external stubs always get proper annotaions.
+// Make sure external stubs always get proper annotations.
 private fun IrDeclaration.hasCCallAnnotation(name: String): Boolean =
         this.annotations.hasAnnotation(cCall.child(Name.identifier(name)))
 
@@ -1444,9 +1445,9 @@ private fun KotlinStubs.reportUnsupportedType(reason: String, type: IrType, loca
 private data class ReadBitsArguments(val offset: Long, val size: Int, val signed: Boolean)
 
 private fun extractReadBitsArguments(readBitsAnnotation: IrConstructorCall) = ReadBitsArguments(
-        readBitsAnnotation.getValue("offset"),
-        readBitsAnnotation.getValue("size"),
-        readBitsAnnotation.getValue("signed")
+        readBitsAnnotation.getConstantValue("offset"),
+        readBitsAnnotation.getConstantValue("size"),
+        readBitsAnnotation.getConstantValue("signed")
 )
 
 internal fun KotlinStubs.generateReadBitsCall(expression: IrCall, irBuilder: IrBuilderWithScope): IrExpression {
@@ -1482,8 +1483,8 @@ internal fun KotlinStubs.generateReadBitsCall(expression: IrCall, irBuilder: IrB
 private data class WriteBitsArguments(val offset: Long, val size: Int)
 
 private fun extractWriteBitsArguments(writeBitsAnnotation: IrConstructorCall) = WriteBitsArguments(
-        writeBitsAnnotation.getValue("offset"),
-        writeBitsAnnotation.getValue("size")
+        writeBitsAnnotation.getConstantValue("offset"),
+        writeBitsAnnotation.getConstantValue("size")
 )
 
 internal fun KotlinStubs.generateWriteBitsCall(expression: IrCall, irBuilder: IrBuilderWithScope): IrExpression {
@@ -1516,4 +1517,95 @@ internal fun KotlinStubs.generateWriteBitsCall(expression: IrCall, irBuilder: Ir
             putValueArgument(3, conversion)
         }
     }
+}
+
+internal fun KotlinStubs.generateGetMemberAt(expression: IrCall, irBuilder: IrBuilderWithScope): IrExpression {
+    val getMemberAtAnnotation = expression.symbol.owner.annotations.findAnnotation(RuntimeNames.cCallGetMemberAt)!!
+    val offset = getMemberAtAnnotation.getConstantValue<Long>("offset")
+    val isPassedByValue = getMemberAtAnnotation.getConstantValue<Boolean>("isPassedByValue")
+    val typeHoldingVariable = getMemberAtAnnotation.getConstantValue<String>("typeHolder")
+    val receiver = expression.dispatchReceiver!!
+
+    val classType = receiver.type.classOrNull!!.owner.declarations
+            .filterIsInstance<IrProperty>()
+            .first { it.name.asString() == typeHoldingVariable }
+            .backingField!!.type
+
+
+    return with (irBuilder) {
+        val base = irCall(symbols.interopNativePointedRawPtr).apply { dispatchReceiver = receiver }
+
+
+        val longPlusLong = base.type.classOrNull!!.owner.declarations
+                .filterIsInstance<IrFunction>()
+                .single { it.name.asString() == "plus" }
+        val address = irCall(longPlusLong).apply {
+            dispatchReceiver = base
+            putValueArgument(0, irLong(offset))
+        }
+        val ptr = irCall(symbols.interopInterpretNullablePointed).apply {
+            putTypeArgument(0, classType)
+            putValueArgument(0, address)
+        }
+        if (isPassedByValue) {
+            val valueGetter = classType.classOrNull!!.owner.declarations
+                    .filterIsInstance<IrProperty>()
+                    .single { it.name.asString() == "value" }.getter!!
+            irCall(valueGetter).apply { dispatchReceiver = ptr }
+        } else {
+            ptr
+        }
+    }
+}
+
+internal fun KotlinStubs.generateSetMemberAt(expression: IrCall, irBuilder: IrBuilderWithScope): IrExpression {
+    val setMemberAtAnnotation = expression.symbol.owner.annotations.findAnnotation(RuntimeNames.cCallSetMemberAt)!!
+    val offset = setMemberAtAnnotation.getConstantValue<Long>("offset")
+    val receiver = expression.dispatchReceiver!!
+
+    val typeHoldingVariable = setMemberAtAnnotation.getConstantValue<String>("typeHolder")
+
+    val classType = receiver.type.classOrNull!!.owner.declarations
+            .filterIsInstance<IrProperty>()
+            .first { it.name.asString() == typeHoldingVariable }
+            .backingField!!.type
+
+    val valueToSet = expression.getValueArgument(0)
+
+    return with (irBuilder) {
+        val base = irCall(symbols.interopNativePointedRawPtr).apply { dispatchReceiver = receiver }
+        val longPlusLong = symbols.getBinaryOperator(OperatorNameConventions.PLUS, irBuiltIns.long, irBuiltIns.long)
+        val address = irCall(longPlusLong).apply {
+            dispatchReceiver = base
+            putValueArgument(0, irLong(offset))
+        }
+        val ptr = irCall(symbols.interopInterpretNullablePointed).apply {
+            putTypeArgument(0, classType)
+            putValueArgument(0, address)
+        }
+        val valueSetter = classType.classOrNull!!.owner.declarations
+                .filterIsInstance<IrProperty>()
+                .single { it.name.asString() == "value" }.setter!!
+        irCall(valueSetter).apply {
+            dispatchReceiver = ptr
+            putValueArgument(0, valueToSet)
+        }
+    }
+}
+
+// TODO: possible optimization: if value is const then we can return corresponding enum entry immediately.
+// TODO: Check how enum lowering will affect IR.
+internal fun KotlinStubs.generateEnumByValue(context: Context, byValueCall: IrCall, irBuilder: IrBuilderWithScope): IrExpression {
+    val companionObject = byValueCall.dispatchReceiver!!.type.classOrNull!!.owner
+    val value = byValueCall.getValueArgument(0)
+
+    val enumClass = companionObject.parentAsClass
+
+    val loweredEnum = context.specialDeclarationsFactory.getLoweredEnum(enumClass)
+
+    with (irBuilder) {
+        val valuesCall = irCall(loweredEnum.valuesGetter)
+    }
+
+    TODO("generate for loop over entries")
 }

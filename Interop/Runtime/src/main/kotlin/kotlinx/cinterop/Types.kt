@@ -266,56 +266,115 @@ public abstract class CEnumVar(rawPtr: NativePtr) : CPrimitiveVar(rawPtr)
 @Suppress("FINAL_UPPER_BOUND")
 public class BooleanVarOf<T : Boolean>(rawPtr: NativePtr) : CPrimitiveVar(rawPtr) {
     companion object : Type(1)
+
+    @Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
+    public var value: T
+        get() {
+            val byte = nativeMemUtils.getByte(this)
+            return byte.toBoolean() as T
+        }
+        set(value) = nativeMemUtils.putByte(this, value.toByte())
 }
 
 @Suppress("FINAL_UPPER_BOUND")
 public class ByteVarOf<T : Byte>(rawPtr: NativePtr) : CPrimitiveVar(rawPtr) {
     companion object : Type(1)
+
+    @Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
+    public var value: T
+        get() = nativeMemUtils.getByte(this) as T
+        set(value) = nativeMemUtils.putByte(this, value)
 }
 
 @Suppress("FINAL_UPPER_BOUND")
 public class ShortVarOf<T : Short>(rawPtr: NativePtr) : CPrimitiveVar(rawPtr) {
     companion object : Type(2)
+
+    @Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
+    public var value: T
+        get() = nativeMemUtils.getShort(this) as T
+        set(value) = nativeMemUtils.putShort(this, value)
 }
 
 @Suppress("FINAL_UPPER_BOUND")
 public class IntVarOf<T : Int>(rawPtr: NativePtr) : CPrimitiveVar(rawPtr) {
     companion object : Type(4)
+
+    @Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
+    public var value: T
+        get() = nativeMemUtils.getInt(this) as T
+        set(value) = nativeMemUtils.putInt(this, value)
 }
 
 @Suppress("FINAL_UPPER_BOUND")
 public class LongVarOf<T : Long>(rawPtr: NativePtr) : CPrimitiveVar(rawPtr) {
     companion object : Type(8)
+
+    @Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
+    public var value: T
+        get() = nativeMemUtils.getLong(this) as T
+        set(value) = nativeMemUtils.putLong(this, value)
 }
 
 @Suppress("FINAL_UPPER_BOUND")
 public class UByteVarOf<T : UByte>(rawPtr: NativePtr) : CPrimitiveVar(rawPtr) {
     companion object : Type(1)
+
+    @Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
+    public var value: T
+        get() = nativeMemUtils.getByte(this).toUByte() as T
+        set(value) = nativeMemUtils.putByte(this, value.toByte())
 }
 
 @Suppress("FINAL_UPPER_BOUND")
 public class UShortVarOf<T : UShort>(rawPtr: NativePtr) : CPrimitiveVar(rawPtr) {
     companion object : Type(2)
+
+    @Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
+    public var value: T
+        get() = nativeMemUtils.getShort(this).toUShort() as T
+        set(value) = nativeMemUtils.putShort(this, value.toShort())
 }
 
 @Suppress("FINAL_UPPER_BOUND")
 public class UIntVarOf<T : UInt>(rawPtr: NativePtr) : CPrimitiveVar(rawPtr) {
     companion object : Type(4)
+
+    @Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
+    public var value: T
+        get() = nativeMemUtils.getInt(this).toUInt() as T
+        set(value) = nativeMemUtils.putInt(this, value.toInt())
 }
 
 @Suppress("FINAL_UPPER_BOUND")
 public class ULongVarOf<T : ULong>(rawPtr: NativePtr) : CPrimitiveVar(rawPtr) {
     companion object : Type(8)
+
+
+    @Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
+    public var value: T
+        get() = nativeMemUtils.getLong(this).toULong() as T
+        set(value) = nativeMemUtils.putLong(this, value.toLong())
 }
 
 @Suppress("FINAL_UPPER_BOUND")
 public class FloatVarOf<T : Float>(rawPtr: NativePtr) : CPrimitiveVar(rawPtr) {
     companion object : Type(4)
+
+    @Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
+    public var value: T
+        get() = nativeMemUtils.getFloat(this) as T
+        set(value) = nativeMemUtils.putFloat(this, value)
 }
 
 @Suppress("FINAL_UPPER_BOUND")
 public class DoubleVarOf<T : Double>(rawPtr: NativePtr) : CPrimitiveVar(rawPtr) {
     companion object : Type(8)
+
+    @Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
+    public var value: T
+        get() = nativeMemUtils.getDouble(this) as T
+        set(value) = nativeMemUtils.putDouble(this, value)
 }
 
 public typealias BooleanVar = BooleanVarOf<Boolean>
@@ -330,89 +389,28 @@ public typealias ULongVar = ULongVarOf<ULong>
 public typealias FloatVar = FloatVarOf<Float>
 public typealias DoubleVar = DoubleVarOf<Double>
 
-@Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
-public var <T : Boolean> BooleanVarOf<T>.value: T
-    get() {
-        val byte = nativeMemUtils.getByte(this)
-        return byte.toBoolean() as T
-    }
-    set(value) = nativeMemUtils.putByte(this, value.toByte())
-
 @Suppress("NOTHING_TO_INLINE")
 public inline fun Boolean.toByte(): Byte = if (this) 1 else 0
 
 @Suppress("NOTHING_TO_INLINE")
 public inline fun Byte.toBoolean() = (this.toInt() != 0)
 
-@Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
-public var <T : Byte> ByteVarOf<T>.value: T
-    get() = nativeMemUtils.getByte(this) as T
-    set(value) = nativeMemUtils.putByte(this, value)
-
-@Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
-public var <T : Short> ShortVarOf<T>.value: T
-    get() = nativeMemUtils.getShort(this) as T
-    set(value) = nativeMemUtils.putShort(this, value)
-
-@Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
-public var <T : Int> IntVarOf<T>.value: T
-    get() = nativeMemUtils.getInt(this) as T
-    set(value) = nativeMemUtils.putInt(this, value)
-
-@Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
-public var <T : Long> LongVarOf<T>.value: T
-    get() = nativeMemUtils.getLong(this) as T
-    set(value) = nativeMemUtils.putLong(this, value)
-
-@Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
-public var <T : UByte> UByteVarOf<T>.value: T
-    get() = nativeMemUtils.getByte(this).toUByte() as T
-    set(value) = nativeMemUtils.putByte(this, value.toByte())
-
-@Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
-public var <T : UShort> UShortVarOf<T>.value: T
-    get() = nativeMemUtils.getShort(this).toUShort() as T
-    set(value) = nativeMemUtils.putShort(this, value.toShort())
-
-@Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
-public var <T : UInt> UIntVarOf<T>.value: T
-    get() = nativeMemUtils.getInt(this).toUInt() as T
-    set(value) = nativeMemUtils.putInt(this, value.toInt())
-
-@Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
-public var <T : ULong> ULongVarOf<T>.value: T
-    get() = nativeMemUtils.getLong(this).toULong() as T
-    set(value) = nativeMemUtils.putLong(this, value.toLong())
-
-// TODO: ensure native floats have the appropriate binary representation
-
-@Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
-public var <T : Float> FloatVarOf<T>.value: T
-    get() = nativeMemUtils.getFloat(this) as T
-    set(value) = nativeMemUtils.putFloat(this, value)
-
-@Suppress("FINAL_UPPER_BOUND", "UNCHECKED_CAST")
-public var <T : Double> DoubleVarOf<T>.value: T
-    get() = nativeMemUtils.getDouble(this) as T
-    set(value) = nativeMemUtils.putDouble(this, value)
-
-
 public class CPointerVarOf<T : CPointer<*>>(rawPtr: NativePtr) : CVariable(rawPtr) {
     companion object : CVariable.Type(pointerSize.toLong(), pointerSize)
+
+    /**
+     * The value of this variable.
+     */
+    @Suppress("UNCHECKED_CAST")
+    public var value: T?
+        get() = interpretCPointer<CPointed>(nativeMemUtils.getNativePtr(this)) as T?
+        set(value) = nativeMemUtils.putNativePtr(this, value.rawValue)
 }
 
 /**
  * The C data variable containing the pointer to `T`.
  */
 public typealias CPointerVar<T> = CPointerVarOf<CPointer<T>>
-
-/**
- * The value of this variable.
- */
-@Suppress("UNCHECKED_CAST")
-public inline var <P : CPointer<*>> CPointerVarOf<P>.value: P?
-    get() = interpretCPointer<CPointed>(nativeMemUtils.getNativePtr(this)) as P?
-    set(value) = nativeMemUtils.putNativePtr(this, value.rawValue)
 
 /**
  * The code or data pointed by the value of this variable.

@@ -153,6 +153,9 @@ sealed class AnnotationStub {
         object CString : CCall()
         object WCString : CCall()
         class Symbol(val symbolName: String) : CCall()
+        // TODO: better naming of parameters
+        class GetMemberAt(val offset: Long, val typeHolderName: String, val isPassedByValue: Boolean) : CCall()
+        class SetMemberAt(val offset: Long, val typeHolderName: String) : CCall()
     }
 
     class CStruct(val struct: String) : AnnotationStub()
@@ -195,6 +198,9 @@ class PropertyStub(
         ) : Kind()
 
         class Constant(val constant: ConstantStub) : Kind()
+
+        // TODO: Just a hack for typeholding variables
+        object LateinitVar : Kind()
     }
 
     override fun <T, R> accept(visitor: StubIrVisitor<T, R>, data: T): R {
@@ -335,7 +341,7 @@ sealed class PropertyAccessor : FunctionalStub {
         class MemberAt(
                 val offset: Long,
                 val typeArguments: List<TypeArgumentStub> = emptyList(),
-                val hasValueAccessor: Boolean
+                val isPassedByValue: Boolean
         ) : Getter() {
             override val annotations: List<AnnotationStub> = emptyList()
         }

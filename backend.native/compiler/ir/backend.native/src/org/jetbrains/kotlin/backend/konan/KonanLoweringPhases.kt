@@ -230,7 +230,7 @@ internal val interopPart2Phase = makeKonanFileLoweringPhase(
         ::InteropLoweringPart2,
         name = "InteropPart2",
         description = "Interop lowering, part 2",
-        prerequisite = setOf(localFunctionsPhase)
+        prerequisite = setOf(localFunctionsPhase) // TODO: depend on enum lowering?
 )
 
 internal val varargPhase = makeKonanFileLoweringPhase(

@@ -1,5 +1,7 @@
 package kotlinx.cinterop.internal
 
+import kotlin.reflect.KClass
+
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.BINARY)
 annotation class CStruct(val spelling: String)
@@ -34,4 +36,12 @@ public annotation class CCall(val id: String) {
     @Target(AnnotationTarget.PROPERTY_SETTER)
     @Retention(AnnotationRetention.BINARY)
     annotation class WriteBits(val offset: Long, val size: Int)
+
+    @Target(AnnotationTarget.PROPERTY_GETTER)
+    @Retention(AnnotationRetention.BINARY)
+    annotation class GetMemberAt(val offset: Long, val typeHolder: String, val isPassedByValue: Boolean)
+
+    @Target(AnnotationTarget.PROPERTY_SETTER)
+    @Retention(AnnotationRetention.BINARY)
+    annotation class SetMemberAt(val offset: Long, val typeHolder: String)
 }

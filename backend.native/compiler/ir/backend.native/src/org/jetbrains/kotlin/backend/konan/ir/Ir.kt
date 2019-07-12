@@ -177,6 +177,9 @@ internal class KonanSymbols(context: Context, private val symbolTable: SymbolTab
     val interopNativePointedRawPtr =
             symbolTable.referenceSimpleFunction(context.interopBuiltIns.nativePointedRawPtrGetter)
 
+    val interopInterpretNullablePointed =
+            symbolTable.referenceSimpleFunction(context.interopBuiltIns.interpretNullablePointed)
+
     val objCExportTrapOnUndeclaredException =
             symbolTable.referenceSimpleFunction(context.builtIns.kotlinNativeInternal.getContributedFunctions(
                     Name.identifier("trapOnUndeclaredException"),

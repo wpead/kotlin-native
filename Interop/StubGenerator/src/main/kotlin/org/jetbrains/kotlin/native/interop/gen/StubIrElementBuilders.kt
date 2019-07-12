@@ -48,7 +48,13 @@ internal class StructStubBuilder(
         override val context: StubsBuildingContext,
         private val decl: StructDecl
 ) : StubElementBuilder {
+
+    private var typeHolderCounter = 0;
+
     override fun build(): List<StubIrElement> {
+
+        val typeHolderVariables = mutableListOf<PropertyStub>()
+
         val platform = context.platform
         val def = decl.def ?: return generateForwardStruct(decl)
 
@@ -86,15 +92,31 @@ internal class StructStubBuilder(
                     PropertyStub(field.name, WrapperStubType(type), kind, annotations = annotations)
                 } else {
                     val pointedType = WrapperStubType(fieldRefType.pointedType)
-                    val pointedTypeArgument = TypeArgumentStub(pointedType)
                     if (fieldRefType is TypeMirror.ByValue) {
-                        val kind = PropertyStub.Kind.Var(
-                                PropertyAccessor.Getter.MemberAt(offset, typeArguments = listOf(pointedTypeArgument), hasValueAccessor = true),
-                                PropertyAccessor.Setter.MemberAt(offset, typeArguments = listOf(pointedTypeArgument))
-                        )
+                        val kind = if (platform == KotlinPlatform.JVM) {
+                            val pointedTypeArgument = TypeArgumentStub(pointedType)
+                            PropertyStub.Kind.Var(
+                                    PropertyAccessor.Getter.MemberAt(offset, typeArguments = listOf(pointedTypeArgument), isPassedByValue = true),
+                                    PropertyAccessor.Setter.MemberAt(offset, typeArguments = listOf(pointedTypeArgument))
+                            )
+                        } else {
+                            val typeHolder = generateTypeHolder(pointedType)
+                            typeHolderVariables += typeHolder
+                            PropertyStub.Kind.Var(
+                                    PropertyAccessor.Getter.ExternalGetter(listOf(AnnotationStub.CCall.GetMemberAt(offset, typeHolder.name, true))),
+                                    PropertyAccessor.Setter.ExternalSetter(listOf(AnnotationStub.CCall.SetMemberAt(offset, typeHolder.name)))
+                            )
+                        }
                         PropertyStub(field.name, WrapperStubType(fieldRefType.argType), kind)
                     } else {
-                        val kind = PropertyStub.Kind.Val(PropertyAccessor.Getter.MemberAt(offset, hasValueAccessor = false))
+                        val kind = PropertyStub.Kind.Val(if (platform == KotlinPlatform.JVM) {
+                            PropertyAccessor.Getter.MemberAt(offset, isPassedByValue = false)
+                        } else {
+                            val typeHolder = generateTypeHolder(pointedType)
+                            PropertyAccessor.Getter.ExternalGetter(
+                                    listOf(AnnotationStub.CCall.GetMemberAt(offset, typeHolder.name, false))
+                            )
+                        })
                         PropertyStub(field.name, pointedType, kind)
                     }
                 }
@@ -137,7 +159,7 @@ internal class StructStubBuilder(
         return listOf(ClassStub.Simple(
                 classifier,
                 origin = StubOrigin.Struct(decl),
-                properties = fields.filterNotNull() + if (platform == KotlinPlatform.NATIVE) bitFields else emptyList(),
+                properties = typeHolderVariables.toList() + fields.filterNotNull() + if (platform == KotlinPlatform.NATIVE) bitFields else emptyList(),
                 functions = emptyList(),
                 modality = ClassStubModality.NONE,
                 annotations = listOfNotNull(structAnnotation),
@@ -145,6 +167,12 @@ internal class StructStubBuilder(
                 constructorParameters = listOf(rawPtrConstructorParam),
                 companion = companion
         ))
+    }
+
+    private fun generateTypeHolder(type: StubType): PropertyStub {
+        val name = "__typeHolderVariable${typeHolderCounter++}__"
+
+        return PropertyStub(name, type, PropertyStub.Kind.LateinitVar)
     }
 
     private fun getArrayLength(type: ArrayType): Long {
