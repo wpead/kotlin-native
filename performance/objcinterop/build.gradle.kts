@@ -41,5 +41,5 @@ native.apply {
             headers("$projectDir/src/nativeInterop/cinterop/complexNumbers.h")
         }
     }
-    binaries.getExecutable(BenchmarkingPlugin.NATIVE_EXECUTABLE_NAME, "RELEASE").linkTask.dependsOn(compileLibary)
+    binaries.getExecutable(BenchmarkingPlugin.NATIVE_EXECUTABLE_NAME, "DEBUG").linkTask.dependsOn(compileLibary)
 }

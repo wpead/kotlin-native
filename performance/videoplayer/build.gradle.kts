@@ -49,7 +49,7 @@ var includeDirsSdl = when {
 
 compileBenchmark {
     applicationName = "Videoplayer"
-    repeatNumber = 10
+    repeatNumber = 1
     buildSteps {
         step("runCinteropFfmpeg") {
             command = listOf(
@@ -68,7 +68,7 @@ compileBenchmark {
         step("runKonanProgram") {
             command = listOf(
                 "$dist/bin/konanc$toolSuffix",
-                "-ea", "-p", "program",
+                "-ea", "-p", "program", "-g", "-Xprofile-phases",
                 "-o", "${buildDir.absolutePath}/program$binarySuffix",
                 "-l", "$dist/../samples/videoplayer/build/classes/kotlin/videoPlayer/main/videoplayer-cinterop-ffmpeg.klib",
                 "-l", "$dist/../samples/videoplayer/build/classes/kotlin/videoPlayer/main/videoplayer-cinterop-sdl.klib",

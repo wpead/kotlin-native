@@ -129,7 +129,7 @@ open class BenchmarkingPlugin: Plugin<Project> {
     private fun Project.configureNativeTarget(hostPreset: KotlinNativeTargetPreset) {
         kotlin.targetFromPreset(hostPreset, NATIVE_TARGET_NAME) {
             compilations.getByName("main").kotlinOptions.freeCompilerArgs = project.compilerArgs + "-opt"
-            binaries.executable(NATIVE_EXECUTABLE_NAME, listOf(RELEASE)) {
+            binaries.executable(NATIVE_EXECUTABLE_NAME, listOf(DEBUG)) {
                 if (HostManager.hostIsMingw) {
                     linkerOpts.add("-L${mingwPath}/lib")
                 }
@@ -158,7 +158,7 @@ open class BenchmarkingPlugin: Plugin<Project> {
     private fun Project.configureTasks() {
         // Native run task.
         val nativeTarget = kotlin.targets.getByName(NATIVE_TARGET_NAME) as KotlinNativeTarget
-        val nativeExecutable = nativeTarget.binaries.getExecutable(NATIVE_EXECUTABLE_NAME, NativeBuildType.RELEASE)
+        val nativeExecutable = nativeTarget.binaries.getExecutable(NATIVE_EXECUTABLE_NAME, NativeBuildType.DEBUG)
         val konanRun = createRunTask(this, "konanRun", nativeExecutable.linkTask,
                 buildDir.resolve(nativeBenchResults).absolutePath).apply {
             group = BENCHMARKING_GROUP
