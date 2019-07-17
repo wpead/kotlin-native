@@ -115,6 +115,7 @@ configurations {
     kotlin_native_utils_jar
     kotlin_util_io_jar
     kotlin_util_klib_jar
+    kotlin_kotlinx_metadata_jar
     trove4j_jar
     kotlinCommonSources
 
@@ -128,6 +129,12 @@ configurations {
     }
 }
 
+task ttt {
+    doLast {
+        println(configurations.kotlin_kotlinx_metadata_jar.files)
+    }
+}
+
 dependencies {
     trove4j_jar "org.jetbrains.intellij.deps:trove4j:1.0.20181211@jar"
     kotlin_compiler_jar "$kotlinCompilerModule@jar"
@@ -137,6 +144,7 @@ dependencies {
     kotlin_native_utils_jar "$kotlinNativeUtilsModule@jar"
     kotlin_util_io_jar "$kotlinUtilIoModule@jar"
     kotlin_util_klib_jar "$kotlinUtilKlibModule@jar"
+    kotlin_kotlinx_metadata_jar "$kotlinKotlinXMetadata@jar"
 
     [kotlinCommonStdlibModule, kotlinTestCommonModule, kotlinTestAnnotationsCommonModule].each {
         kotlinCommonSources(it) { transitive = false }
@@ -249,6 +257,15 @@ task trove4jCopy(type: Copy) {
     }
 } 
 
+task kotlinxMetadataCopy(type: Copy) {
+    from configurations.getByName("kotlin_kotlinx_metadata_jar") {
+        include "kotlinx*.jar"
+        rename "kotlinx(.*).jar", "kotlinx-metadata.jar"
+
+        into 'build/external_jars'
+    }
+}
+
 externalJars.each { arg ->
     def jar = arg.replace('_', '-') // :(
     task("${arg}Copy", type: Copy) {
@@ -257,6 +274,10 @@ externalJars.each { arg ->
             rename "kotlin-${jar}(.*).jar", "kotlin-${jar}.jar"
 
             into 'build/external_jars'
+            
+            eachFile {
+                println(it)
+            }
         }
     }
 }
@@ -264,7 +285,8 @@ externalJars.each { arg ->
 task external_jars(type: Copy) {
     dependsOn externalJars.collect { "${it}Copy" }
     dependsOn trove4jCopy
-
+    dependsOn kotlinxMetadataCopy
+    
     from configurations.compilerCompile {
 
         include "protobuf-java-${protobufVersion}.jar"

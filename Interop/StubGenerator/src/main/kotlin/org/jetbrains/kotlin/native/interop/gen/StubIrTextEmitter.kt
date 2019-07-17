@@ -148,8 +148,8 @@ class StubIrTextEmitter(
 
         out("// NOTE THIS FILE IS AUTO-GENERATED")
     }
-    fun emit(ktFile: Appendable, cFile: Appendable, entryPoint: String?) {
 
+    fun emitCFile(cFile: Appendable, entryPoint: String?) {
         withOutput(cFile) {
             context.libraryForCStubs.preambleLines.forEach {
                 out(it)
@@ -170,6 +170,9 @@ class StubIrTextEmitter(
                 out("}")
             }
         }
+    }
+
+    fun emit(ktFile: Appendable) {
 
         // Stubs generation may affect imports list so do it before header generation.
         val stubLines = generateKotlinFragmentBy {
@@ -476,7 +479,9 @@ class StubIrTextEmitter(
             val nullability = if (stubType.nullable) "?" else ""
             "$classifier$typeArguments$nullability"
         }
-        is SymbolicStubType -> stubType.name + if (stubType.nullable) "?" else ""
+        is RuntimeStubType -> stubType.name + if (stubType.nullable) "?" else ""
+        is TypeParameterStubType -> stubType.name + if (stubType.nullable) "?" else ""
+        is NestedStubType -> stubType.name + if (stubType.nullable) "?" else ""
     }
 
     private fun renderValueUsage(value: ValueStub): String = when (value) {

@@ -185,12 +185,12 @@ private class ObjCMethodStubBuilder(
                     val originalReturnType = method.getReturnType(container.clazz)
                     val typeParameter = TypeParameterStub("T", WrapperStubType(clazz))
                     val returnType = if (originalReturnType is ObjCPointer) {
-                        typeParameter.getStubType(originalReturnType.isNullable)
+                        typeParameter.asType(originalReturnType.isNullable)
                     } else {
                         // This shouldn't happen actually.
                         this.stubReturnType
                     }
-                    val typeArgument = TypeArgumentStub(typeParameter.getStubType(false))
+                    val typeArgument = TypeArgumentStub(typeParameter.asType(false))
                     val receiverType = ClassifierStubType(KotlinTypes.objCClassOf, listOf(typeArgument))
                     val receiver = ReceiverParameterStub(receiverType)
                     val createMethod = FunctionStub(

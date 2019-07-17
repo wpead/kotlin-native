@@ -146,12 +146,11 @@ internal class StructStubBuilder(
             PropertyStub(field.name, WrapperStubType(kotlinType), kind)
         }
 
-        val superClass = SymbolicStubType("CStructVar")
-        val rawPtrConstructorParam = ConstructorParameterStub("rawPtr", SymbolicStubType("NativePtr"))
+        val superClass = RuntimeStubType("CStructVar")
+        val rawPtrConstructorParam = ConstructorParameterStub("rawPtr", RuntimeStubType("NativePtr"))
         val superClassInit = SuperClassInit(superClass, listOf(GetConstructorParameter(rawPtrConstructorParam)))
 
-        // TODO: How we will differ Type and CStructVar.Type?
-        val companionSuper = SymbolicStubType("Type")
+        val companionSuper = NestedStubType("Type", superClass)
         val typeSize = listOf(IntegralConstantStub(def.size, 4, true), IntegralConstantStub(def.align.toLong(), 4, true))
         val companionSuperInit = SuperClassInit(companionSuper, typeSize)
         val companion = ClassStub.Companion(companionSuperInit)
@@ -206,8 +205,8 @@ internal class StructStubBuilder(
     private fun generateForwardStruct(s: StructDecl): List<StubIrElement> = when (context.platform) {
         KotlinPlatform.JVM -> {
             val classifier = context.getKotlinClassForPointed(s)
-            val superClass = SymbolicStubType("COpaque")
-            val rawPtrConstructorParam = ConstructorParameterStub("rawPtr", SymbolicStubType("NativePtr"))
+            val superClass = RuntimeStubType("COpaque")
+            val rawPtrConstructorParam = ConstructorParameterStub("rawPtr", RuntimeStubType("NativePtr"))
             val superClassInit = SuperClassInit(superClass, listOf(GetConstructorParameter(rawPtrConstructorParam)))
             val origin = StubOrigin.Struct(s)
             listOf(ClassStub.Simple(classifier, ClassStubModality.NONE, listOf(rawPtrConstructorParam), superClassInit, origin = origin))
@@ -252,7 +251,7 @@ internal class EnumStubBuilder(
         val enum = ClassStub.Enum(clazz, canonicalEntries,
                 origin = StubOrigin.Enum(enumDef),
                 constructorParameters = listOf(valueParamStub),
-                interfaces = listOf(SymbolicStubType("CEnum"))
+                interfaces = listOf(RuntimeStubType("CEnum"))
         )
         context.bridgeComponentsBuilder.enumToTypeMirror[enum] = baseTypeMirror
 

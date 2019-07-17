@@ -4,8 +4,10 @@
  */
 package org.jetbrains.kotlin.native.interop.gen
 
+import org.jetbrains.kotlin.library.SerializedMetadata
 import org.jetbrains.kotlin.native.interop.gen.jvm.InteropConfiguration
 import org.jetbrains.kotlin.native.interop.gen.jvm.KotlinPlatform
+import org.jetbrains.kotlin.native.interop.gen.metadata.NativePackageWriter
 import org.jetbrains.kotlin.native.interop.indexer.*
 import java.io.File
 import java.util.*
@@ -86,18 +88,71 @@ class StubIrContext(
     }
 }
 
+sealed class InteropGenerationMode<T: Any> {
+
+    lateinit var output: T
+    abstract val outCFile: File
+    abstract val entryPoint: String?
+
+    data class Text(
+            val outKtFile: File,
+            override val outCFile: File,
+            override val entryPoint: String?
+    ) : InteropGenerationMode<Unit>()
+
+    class Metadata(
+            override val outCFile: File,
+            override val entryPoint: String?
+    ) : InteropGenerationMode<SerializedMetadata>()
+}
+
 class StubIrDriver(private val context: StubIrContext) {
-    fun run(outKtFile: File, outCFile: File, entryPoint: String?) {
+
+    fun <T: Any> run(mode: InteropGenerationMode<T>) {
         val builderResult = StubIrBuilder(context).build()
         val bridgeBuilderResult = StubIrBridgeBuilder(context, builderResult).build()
-        outKtFile.bufferedWriter().use { ktFile ->
-            File(outCFile.absolutePath).bufferedWriter().use { cFile ->
-                StubIrTextEmitter(
-                        context,
-                        builderResult,
-                        bridgeBuilderResult
-                ).emit(ktFile, cFile, entryPoint)
+        File(mode.outCFile.absolutePath).bufferedWriter().use {
+            emitCFileContent(it, mode.entryPoint, bridgeBuilderResult.nativeBridges)
+        }
+        when (mode) {
+            is InteropGenerationMode.Text -> {
+                mode.outKtFile.bufferedWriter().use { ktFile ->
+                        StubIrTextEmitter(
+                                context,
+                                builderResult,
+                                bridgeBuilderResult
+                        ).apply { emit(ktFile) }
+                }
             }
+            is InteropGenerationMode.Metadata -> {
+                val kmPackage = StubIrMetadataEmitter(builderResult).emit()
+                val packageWriter = NativePackageWriter()
+                kmPackage.accept(packageWriter)
+                mode.output = packageWriter.write()
+            }
+        }
+    }
+
+    private fun emitCFileContent(cFile: Appendable, entryPoint: String?, nativeBridges: NativeBridges) {
+        val out = { it: String -> cFile.appendln(it) }
+
+        context.libraryForCStubs.preambleLines.forEach {
+            out(it)
+        }
+        out("")
+
+        out("// NOTE THIS FILE IS AUTO-GENERATED")
+        out("")
+
+        nativeBridges.nativeLines.forEach { out(it) }
+
+        if (entryPoint != null) {
+            out("extern int Konan_main(int argc, char** argv);")
+            out("")
+            out("__attribute__((__used__))")
+            out("int $entryPoint(int argc, char** argv)  {")
+            out("  return Konan_main(argc, argv);")
+            out("}")
         }
     }
 }

@@ -59,8 +59,8 @@ class TypeParameterStub(
         val name: String,
         val upperBound: StubType? = null
 ) {
-    fun getStubType(nullable: Boolean): StubType =
-            SymbolicStubType(name, nullable = nullable)
+    fun asType(nullable: Boolean): StubType =
+            TypeParameterStubType(name, nullable = nullable)
 
 }
 
@@ -92,9 +92,37 @@ class ClassifierStubType(
 
 
 /**
- * Fallback variant for all cases where we cannot refer to specific [KotlinType] or [Classifier].
+ * Type that is belongs to [kotlinx.cinterop].
  */
-class SymbolicStubType(
+class RuntimeStubType(
+        val name: String,
+        override val nullable: Boolean = false
+) : StubType() {
+    val fqName: String
+        get() = "kotlinx.cinterop.$name"
+}
+
+/**
+ * Type that is tested in another type declaration.
+ * TODO: Rethink.
+ */
+class NestedStubType(
+        val name: String,
+        val parent: StubType,
+        override val nullable: Boolean = false
+) : StubType() {
+    val fqName: String
+        get() = when (parent) {
+            is RuntimeStubType -> "${parent.fqName}.$name"
+            is ClassifierStubType -> "${parent.classifier.fqName}.$name"
+            else -> error("$parent cannot have nested declarations.")
+        }
+}
+
+/**
+ *
+ */
+class TypeParameterStubType(
         val name: String,
         override val nullable: Boolean = false
 ) : StubType()

@@ -56,6 +56,7 @@ if (hasProperty("kotlinProjectPath")) {
             substitute module("org.jetbrains.kotlin:kotlin-util-io") with project(':kotlin-util-io')
             substitute module("org.jetbrains.kotlin:kotlin-util-klib") with project(':kotlin-util-klib')
             substitute module("org.jetbrains.kotlin:kotlin-native-utils") with project(':kotlin-native:kotlin-native-utils')
+            substitute module("org.jetbrains.kotlin:kotlinx-metadata") with project(':kotlinx-metadata')
         }
     }
 }
