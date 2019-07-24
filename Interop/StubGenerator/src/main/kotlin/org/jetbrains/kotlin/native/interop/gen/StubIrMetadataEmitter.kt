@@ -103,6 +103,7 @@ class StubIrMetadataEmitter(
         }
 
         private fun FunctionStub.getFlags(): Array<Flag> = listOfNotNull(
+                Flag.Common.IS_PUBLIC,
                 Flag.Function.IS_EXTERNAL,
                 Flag.HAS_ANNOTATIONS
         ).toTypedArray()

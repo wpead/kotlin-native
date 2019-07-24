@@ -20,14 +20,22 @@ import org.jetbrains.kotlin.serialization.StringTableImpl
  * StubIR -> kotlinx.metadata -> protobuf -> klib
  */
 
-class NativePackageWriter(private val stringTable: StringTableImpl = StringTableImpl()) : PackageWriter(stringTable) {
+class NativePackageWriter(
+        private val stringTable: StringTableImpl = StringTableImpl()
+) : PackageWriter(stringTable) {
     fun write(): SerializedMetadata {
         val libraryProto = KonanProtoBuf.LinkDataLibrary.newBuilder()
         libraryProto.moduleName = "<hello>"
-        val fragment = buildFragment(t.build())
+
+        val fragment = listOf(buildFragment(t.build()).toByteArray())
         val fragmentName = "new_interop"
-        libraryProto.addPackageFragmentName("new_interop")
-        return SerializedMetadata(libraryProto.build().toByteArray(), listOf(listOf(fragment.toByteArray())), listOf(fragmentName))
+        libraryProto.addPackageFragmentName(fragmentName)
+
+        val fragments = listOf(fragment)
+        val fragmentNames = listOf(fragmentName)
+
+        val libraryProtoBytes = libraryProto.build().toByteArray()
+        return SerializedMetadata(libraryProtoBytes, fragments, fragmentNames)
     }
 
     private fun buildFragment(
