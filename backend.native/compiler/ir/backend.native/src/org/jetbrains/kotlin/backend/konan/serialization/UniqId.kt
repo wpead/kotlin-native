@@ -22,6 +22,3 @@ object KonanDescriptorUniqIdAware: DescriptorUniqIdAware {
         else -> null
     }?.index
 }
-
-fun newKonanDescriptorUniqId(index: Long): KonanProtoBuf.DescriptorUniqId =
-    KonanProtoBuf.DescriptorUniqId.newBuilder().setIndex(index).build()

@@ -57,7 +57,6 @@ fun buildLibrary(
         manifestProperties: Properties?,
         dataFlowGraph: ByteArray?
 ): KonanLibraryLayout {
-
     val library = KonanLibraryWriterImpl(File(output), moduleName, versions, target, nopack)
 
     library.addMetadata(metadata)
@@ -70,6 +69,7 @@ fun buildLibrary(
         library.addIncludedBinary(it)
     }
     manifestProperties?.let { library.addManifestAddend(it) }
+    println("linkDependencies: ${linkDependencies.joinToString()}")
     library.addLinkDependencies(linkDependencies)
     dataFlowGraph?.let { library.addDataFlowGraph(it) }
 

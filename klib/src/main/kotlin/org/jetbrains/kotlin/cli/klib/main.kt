@@ -21,6 +21,7 @@ import org.jetbrains.kotlin.library.unpackZippedKonanLibraryTo
 import org.jetbrains.kotlin.konan.utils.KonanFactories.DefaultDeserializedDescriptorFactory
 import org.jetbrains.kotlin.konan.util.Logger
 import org.jetbrains.kotlin.metadata.konan.KonanProtoBuf
+import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.serialization.konan.parseModuleHeader
 import org.jetbrains.kotlin.storage.LockBasedStorageManager
 import java.lang.System.out

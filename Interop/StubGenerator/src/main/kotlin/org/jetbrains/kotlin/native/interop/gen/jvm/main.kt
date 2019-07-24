@@ -24,6 +24,9 @@ import org.jetbrains.kotlin.native.interop.gen.wasm.processIdlLib
 import org.jetbrains.kotlin.native.interop.indexer.*
 import org.jetbrains.kotlin.native.interop.tool.*
 import org.jetbrains.kliopt.ArgParser
+import org.jetbrains.kotlin.konan.target.PlatformManager
+import org.jetbrains.kotlin.konan.target.customerDistribution
+import org.jetbrains.kotlin.native.interop.gen.metadata.produceInteropKLib
 import java.io.File
 import java.lang.IllegalArgumentException
 import java.nio.file.*
@@ -33,7 +36,7 @@ fun main(args: Array<String>) {
     processCLib(args)
 }
 
-fun interop(flavor: String, args: Array<String>, additionalArgs: Map<String, Any> = mapOf()) =
+fun interop(flavor: String, args: Array<String>, additionalArgs: Map<String, Any> = mapOf()): Array<String>? =
         when(flavor) {
             "jvm", "native" -> processCLib(args, additionalArgs)
             "wasm" -> processIdlLib(args, additionalArgs)
@@ -158,7 +161,7 @@ private fun findFilesByGlobs(roots: List<Path>, globs: List<String>): Map<Path, 
 }
 
 
-private fun processCLib(args: Array<String>, additionalArgs: Map<String, Any> = mapOf()): Array<String> {
+private fun processCLib(args: Array<String>, additionalArgs: Map<String, Any> = mapOf()): Array<String>? {
     val cinteropArguments = CInteropArguments()
     cinteropArguments.argParser.parse(args)
     val ktGenRoot = cinteropArguments.generated
@@ -173,6 +176,11 @@ private fun processCLib(args: Array<String>, additionalArgs: Map<String, Any> = 
     }
 
     val tool = prepareTool(cinteropArguments.target, flavor)
+
+    val konanHome = System.getProperty("konan.home")
+    val distribution = customerDistribution(konanHome)
+    val platformManager = PlatformManager(distribution)
+    val targetManager = platformManager.targetManager(cinteropArguments.target)
 
     val def = DefFile(defFile, tool.substitutions)
     val isLinkerOptsSetByUser = (cinteropArguments.argParser.getOrigin("linkerOpts") == ArgParser.ValueOrigin.SET_BY_USER) ||
@@ -246,7 +254,11 @@ private fun processCLib(args: Array<String>, additionalArgs: Map<String, Any> = 
 
     val stubIrContext = StubIrContext(logger, configuration, nativeIndex, imports, flavor, libName)
     val stubIrDriver = StubIrDriver(stubIrContext)
-    val output = StubIrOutput.Text(outKtFile, File(outCFile.absolutePath), entryPoint)
+    val output = if (cinteropArguments.metadata) {
+        InteropGenerationMode.Metadata(File(outCFile.absolutePath), entryPoint)
+    } else {
+        InteropGenerationMode.Text(outKtFile, File(outCFile.absolutePath), entryPoint)
+    }
     stubIrDriver.run(output)
 
     // TODO: if a library has partially included headers, then it shouldn't be used as a dependency.
@@ -281,14 +293,30 @@ private fun processCLib(args: Array<String>, additionalArgs: Map<String, Any> = 
 
         runCmd(linkerCmd, verbose)
     } else if (flavor == KotlinPlatform.NATIVE) {
-        val outBcName = libName + ".bc"
+        val outBcName = "$libName.bc"
         val outLib = File(nativeLibsDir, outBcName)
         val compilerCmd = arrayOf(compiler, *stubIrContext.libraryForCStubs.compilerArgs.toTypedArray(),
                 "-emit-llvm", "-c", outCFile.absolutePath, "-o", outLib.absolutePath)
 
         runCmd(compilerCmd, verbose)
+
+        if (output is InteropGenerationMode.Metadata) {
+            produceInteropKLib(
+                    outputFilePath = cinteropArguments.output,
+                    metadata = output.output,
+                    bitcodeFilePath = outLib.absolutePath,
+                    manifest = def.manifestAddendProperties,
+                    target = targetManager.target,
+                    moduleName = stubIrContext.libName
+            )
+        }
     }
-    return argsToCompiler(staticLibraries, libraryPaths)
+
+    return if (output is InteropGenerationMode.Metadata) {
+        null
+    } else {
+        argsToCompiler(staticLibraries, libraryPaths)
+    }
 }
 
 internal fun prepareTool(target: String?, flavor: KotlinPlatform): ToolConfig {

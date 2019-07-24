@@ -89,6 +89,8 @@ class CInteropArguments(argParser: ArgParser =
             multiple = true, delimiter = " ",
             deprecatedWarning = "Option -lopt is deprecated. Please use -linker-options.")
     val linker by argParser.option(ArgType.String, description = "use specified linker")
+
+    val metadata by argParser.option(ArgType.Boolean, description = "emit metadata-based klib", defaultValue = false)
 }
 
 class JSInteropArguments(argParser: ArgParser = ArgParser("jsinterop", useDefaultHelpShortName = false,

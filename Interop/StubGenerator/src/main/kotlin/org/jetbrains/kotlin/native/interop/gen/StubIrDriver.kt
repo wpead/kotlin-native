@@ -86,6 +86,18 @@ class StubIrContext(
 
         // TODO: consider exporting Objective-C class and protocol forward refs.
     }
+
+    fun createPackageName(pkgName: String): String {
+        val VALID_PACKAGE_NAME_REGEX = "[a-zA-Z0-9_.]+".toRegex()
+        return pkgName.split(".").joinToString(".") {
+            if(it.matches(VALID_PACKAGE_NAME_REGEX)){
+                it
+            }else{
+                "`$it`"
+            }
+        }
+    }
+
 }
 
 sealed class InteropGenerationMode<T: Any> {
@@ -125,8 +137,8 @@ class StubIrDriver(private val context: StubIrContext) {
                 }
             }
             is InteropGenerationMode.Metadata -> {
-                val kmPackage = StubIrMetadataEmitter(builderResult).emit()
-                val packageWriter = NativePackageWriter()
+                val kmPackage = StubIrMetadataEmitter(builderResult, bridgeBuilderResult).emit()
+                val packageWriter = NativePackageWriter(context)
                 kmPackage.accept(packageWriter)
                 mode.output = packageWriter.write()
             }

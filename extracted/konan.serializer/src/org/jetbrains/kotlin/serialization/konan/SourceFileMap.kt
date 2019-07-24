@@ -6,9 +6,6 @@ package org.jetbrains.kotlin.serialization.konan
 
 import org.jetbrains.kotlin.descriptors.SourceFile
 import org.jetbrains.kotlin.konan.library.KonanLibrary
-import org.jetbrains.kotlin.konan.library.resolver.KonanResolvedLibrary
-import org.jetbrains.kotlin.serialization.deserialization.DeserializedPackageFragment
-
 private class DeserializedSourceFile(
         val name_: String, val index: Int, val library: KonanLibrary) : SourceFile {
     override fun getName(): String? = name_

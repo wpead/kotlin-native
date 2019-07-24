@@ -10,6 +10,8 @@ import org.jetbrains.kotlin.backend.konan.descriptors.isExpectMember
 import org.jetbrains.kotlin.backend.konan.descriptors.isSerializableExpectClass
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.backend.common.serialization.DeclarationTable
+import org.jetbrains.kotlin.config.LanguageFeature
+import org.jetbrains.kotlin.config.languageVersionSettings
 import org.jetbrains.kotlin.library.SerializedMetadata
 import org.jetbrains.kotlin.metadata.ProtoBuf
 import org.jetbrains.kotlin.metadata.deserialization.BinaryVersion
@@ -21,6 +23,7 @@ import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter.Companion.CALLAB
 import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter.Companion.CLASSIFIERS
 import org.jetbrains.kotlin.resolve.scopes.getDescriptorsFiltered
 import org.jetbrains.kotlin.serialization.DescriptorSerializer
+import org.jetbrains.kotlin.serialization.konan.KonanSerializerExtension
 import org.jetbrains.kotlin.serialization.konan.SourceFileMap
 
 /*
@@ -46,7 +49,9 @@ internal class KonanSerializationUtil(val context: Context, val metadataVersion:
             var classSerializer: DescriptorSerializer = topSerializer
     )
     private fun createNewContext(): SerializerContext {
-        val extension = KonanSerializerExtension(context, metadataVersion, sourceFileMap, declarationTable)
+        val releaseCoroutines = context.config.configuration.languageVersionSettings.supportsFeature(LanguageFeature.ReleaseCoroutines)
+        val provider = declarationTable.descriptorTable::get
+        val extension = KonanSerializerExtension(releaseCoroutines, metadataVersion, sourceFileMap, provider)
         return SerializerContext(
                 extension,
                 DescriptorSerializer.createTopLevel(extension)

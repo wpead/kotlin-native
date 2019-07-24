@@ -3,25 +3,23 @@
  * that can be found in the LICENSE file.
  */
 
-package org.jetbrains.kotlin.backend.konan.serialization
+package org.jetbrains.kotlin.serialization.konan
 
-import org.jetbrains.kotlin.backend.konan.Context
-import org.jetbrains.kotlin.config.LanguageFeature
-import org.jetbrains.kotlin.config.languageVersionSettings
 import org.jetbrains.kotlin.descriptors.*
-import org.jetbrains.kotlin.backend.common.serialization.DeclarationTable
+import org.jetbrains.kotlin.backend.konan.serialization.KonanStringTable
 import org.jetbrains.kotlin.metadata.deserialization.BinaryVersion
 import org.jetbrains.kotlin.metadata.ProtoBuf
 import org.jetbrains.kotlin.metadata.konan.KonanProtoBuf
 import org.jetbrains.kotlin.metadata.serialization.MutableVersionRequirementTable
 import org.jetbrains.kotlin.serialization.DescriptorSerializer
 import org.jetbrains.kotlin.serialization.KotlinSerializerExtensionBase
-import org.jetbrains.kotlin.serialization.konan.KonanSerializerProtocol
-import org.jetbrains.kotlin.serialization.konan.SourceFileMap
-import org.jetbrains.kotlin.types.KotlinType
 
-internal class KonanSerializerExtension(val context: Context, override val metadataVersion: BinaryVersion,
-                                        val sourceFileMap: SourceFileMap, val declarationTable: DeclarationTable
+
+fun newKonanDescriptorUniqId(index: Long): KonanProtoBuf.DescriptorUniqId =
+        KonanProtoBuf.DescriptorUniqId.newBuilder().setIndex(index).build()
+
+class KonanSerializerExtension(val releaseCoroutines: Boolean, override val metadataVersion: BinaryVersion,
+                                        val sourceFileMap: SourceFileMap, val descriptorToIndex: (DeclarationDescriptor) -> Long?
 ) :
         KotlinSerializerExtensionBase(KonanSerializerProtocol) {
 
@@ -29,7 +27,7 @@ internal class KonanSerializerExtension(val context: Context, override val metad
     override fun shouldUseTypeTable(): Boolean = true
 
     fun uniqId(descriptor: DeclarationDescriptor): KonanProtoBuf.DescriptorUniqId? {
-        val index = declarationTable.descriptorTable.get(descriptor)
+        val index = descriptorToIndex(descriptor)
         return index?.let { newKonanDescriptorUniqId(it) }
     }
 
@@ -80,6 +78,6 @@ internal class KonanSerializerExtension(val context: Context, override val metad
     }
 
     override fun releaseCoroutines(): Boolean =
-            context.config.configuration.languageVersionSettings.supportsFeature(LanguageFeature.ReleaseCoroutines)
+            releaseCoroutines
 
 }

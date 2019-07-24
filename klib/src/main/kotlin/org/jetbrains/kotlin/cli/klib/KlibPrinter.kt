@@ -83,7 +83,8 @@ class KlibPrinter(out: Appendable) {
         }
 
         override fun visitPackageFragmentDescriptor(descriptor: PackageFragmentDescriptor, data: Unit) {
-            val children = descriptor.getMemberScope().getContributedDescriptors().filter { it.shouldBePrinted }
+            val contributedDescriptors = descriptor.getMemberScope().getContributedDescriptors()
+            val children = contributedDescriptors.filter { it.shouldBePrinted }
             if (children.isNotEmpty()) {
                 val packageName = descriptor.fqName.let { if (it.isRoot) "<root>" else it.asString() }
                 val header = "package $packageName"

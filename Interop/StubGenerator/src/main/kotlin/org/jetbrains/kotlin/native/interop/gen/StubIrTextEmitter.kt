@@ -38,10 +38,6 @@ class StubIrTextEmitter(
     private val StubContainer.isTopLevelContainer: Boolean
         get() = this == builderResult.stubs
 
-    companion object {
-        private val VALID_PACKAGE_NAME_REGEX = "[a-zA-Z0-9_.]+".toRegex()
-    }
-
     /**
      * The output currently used by the generator.
      * Should append line separator after any usage.
@@ -124,13 +120,7 @@ class StubIrTextEmitter(
 
         out("@file:Suppress(${suppress.joinToString { it.quoteAsKotlinLiteral() }})")
         if (pkgName != "") {
-            val packageName = pkgName.split(".").joinToString("."){
-                if(it.matches(VALID_PACKAGE_NAME_REGEX)){
-                    it
-                }else{
-                    "`$it`"
-                }
-            }
+            val packageName = context.createPackageName(pkgName)
             out("package $packageName")
             out("")
         }
@@ -147,29 +137,6 @@ class StubIrTextEmitter(
         out("")
 
         out("// NOTE THIS FILE IS AUTO-GENERATED")
-    }
-
-    fun emitCFile(cFile: Appendable, entryPoint: String?) {
-        withOutput(cFile) {
-            context.libraryForCStubs.preambleLines.forEach {
-                out(it)
-            }
-            out("")
-
-            out("// NOTE THIS FILE IS AUTO-GENERATED")
-            out("")
-
-            nativeBridges.nativeLines.forEach(out)
-
-            if (entryPoint != null) {
-                out("extern int Konan_main(int argc, char** argv);")
-                out("")
-                out("__attribute__((__used__))")
-                out("int $entryPoint(int argc, char** argv)  {")
-                out("  return Konan_main(argc, argv);")
-                out("}")
-            }
-        }
     }
 
     fun emit(ktFile: Appendable) {
