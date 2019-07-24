@@ -3,10 +3,8 @@
  * that can be found in the LICENSE file.
  */
 
-package org.jetbrains.kotlin.backend.konan.library.impl
+package org.jetbrains.kotlin.konan.library.impl
 
-import llvm.LLVMModuleRef
-import llvm.LLVMWriteBitcodeToFile
 import org.jetbrains.kotlin.backend.konan.library.BitcodeWriter
 import org.jetbrains.kotlin.konan.file.File
 import org.jetbrains.kotlin.konan.library.BitcodeKotlinLibraryLayout
@@ -38,10 +36,5 @@ class BitcodeWriterImpl(
     override fun addNativeBitcode(library: String) {
         val basename = File(library).name
         File(library).copyTo(File(bitcodeLayout.nativeDir, basename))
-    }
-
-    override fun addKotlinBitcode(llvmModule: LLVMModuleRef) {
-        //libraryLayout.llvmModule = llvmModule
-        LLVMWriteBitcodeToFile(llvmModule, bitcodeLayout.mainBitcodeFileName)
     }
 }

@@ -1,21 +1,18 @@
 package org.jetbrains.kotlin.native.interop.gen.metadata
 
-import kotlinx.metadata.*
 import kotlinx.metadata.impl.PackageWriter
-import kotlinx.metadata.impl.ReadContext
-import kotlinx.metadata.impl.WriteContext
-import kotlinx.metadata.impl.extensions.*
 import org.jetbrains.kotlin.konan.CURRENT
 import org.jetbrains.kotlin.konan.KonanVersion
 import org.jetbrains.kotlin.konan.file.File
+import org.jetbrains.kotlin.konan.library.KonanLibraryLayout
+import org.jetbrains.kotlin.konan.library.impl.KonanLibraryWriterImpl
 import org.jetbrains.kotlin.konan.properties.Properties
+import org.jetbrains.kotlin.konan.target.KonanTarget
 import org.jetbrains.kotlin.library.KonanLibraryVersioning
 import org.jetbrains.kotlin.library.KotlinAbiVersion
 import org.jetbrains.kotlin.library.SerializedMetadata
-import org.jetbrains.kotlin.library.impl.KoltinLibraryWriterImpl
 import org.jetbrains.kotlin.metadata.ProtoBuf
 import org.jetbrains.kotlin.metadata.konan.KonanProtoBuf
-import org.jetbrains.kotlin.metadata.serialization.StringTable
 import org.jetbrains.kotlin.serialization.StringTableImpl
 
 /**
@@ -49,20 +46,23 @@ class NativePackageWriter(private val stringTable: StringTableImpl = StringTable
     }
 }
 
-fun buildKlib(
+fun buildInteropKlib(
         outputDir: String,
         metadata: SerializedMetadata,
         manifest: Properties,
-        moduleName: String) {
+        moduleName: String,
+        target: KonanTarget
+) {
     val version = KonanLibraryVersioning(
             "META_INTEROP",
             abiVersion = KotlinAbiVersion.CURRENT,
             compilerVersion = KonanVersion.CURRENT
     )
     val klibFile = File(outputDir, moduleName)
-    val writer = KoltinLibraryWriterImpl(klibFile, moduleName, version)
-    writer.addMetadata(metadata)
-    writer.addManifestAddend(manifest)
-    writer.commit()
+    KonanLibraryWriterImpl(klibFile, moduleName, version, target).apply {
+        addMetadata(metadata)
+        addManifestAddend(manifest)
+        commit()
+    }
 }
 

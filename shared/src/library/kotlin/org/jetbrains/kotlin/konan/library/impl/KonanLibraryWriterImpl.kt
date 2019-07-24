@@ -3,9 +3,8 @@
  * that can be found in the LICENSE file.
  */
 
-package org.jetbrains.kotlin.backend.konan.library.impl
+package org.jetbrains.kotlin.konan.library.impl
 
-import llvm.LLVMModuleRef
 import org.jetbrains.kotlin.library.SerializedIr
 import org.jetbrains.kotlin.backend.konan.library.BitcodeWriter
 import org.jetbrains.kotlin.backend.konan.library.KonanLibraryWriter
@@ -25,45 +24,42 @@ class KonanLibraryLayoutForWriter(
     override val target: KonanTarget
 ) : KonanLibraryLayout, KotlinLibraryLayoutForWriter(libDir)
 
-
 /**
  * Requires non-null [target].
  */
 class KonanLibraryWriterImpl(
-    libDir: File,
-    moduleName: String,
-    versions: KonanLibraryVersioning,
-    target: KonanTarget,
-    nopack: Boolean = false,
+        libDir: File,
+        moduleName: String,
+        versions: KonanLibraryVersioning,
+        target: KonanTarget,
+        nopack: Boolean = false,
 
-    val layout: KonanLibraryLayoutForWriter = KonanLibraryLayoutForWriter(libDir, target),
+        val layout: KonanLibraryLayoutForWriter = KonanLibraryLayoutForWriter(libDir, target),
 
-    base: BaseWriter = BaseWriterImpl(layout, moduleName, versions, nopack),
-    bitcode: BitcodeWriter = BitcodeWriterImpl(layout),
-    metadata: MetadataWriter = MetadataWriterImpl(layout),
-    ir: IrWriter = IrWriterImpl(layout)
+        base: BaseWriter = BaseWriterImpl(layout, moduleName, versions, nopack),
+        bitcode: BitcodeWriter = BitcodeWriterImpl(layout),
+        metadata: MetadataWriter = MetadataWriterImpl(layout),
+        ir: IrWriter = IrWriterImpl(layout)
 
 ) : BaseWriter by base, BitcodeWriter by bitcode, MetadataWriter by metadata, IrWriter by ir, KonanLibraryWriter
 
-internal fun buildLibrary(
-    natives: List<String>,
-    included: List<String>,
-    linkDependencies: List<KonanLibrary>,
-    metadata: SerializedMetadata,
-    ir: SerializedIr,
-    versions: KonanLibraryVersioning,
-    target: KonanTarget,
-    output: String,
-    moduleName: String,
-    llvmModule: LLVMModuleRef?,
-    nopack: Boolean,
-    manifestProperties: Properties?,
-    dataFlowGraph: ByteArray?
+fun buildLibrary(
+        natives: List<String>,
+        included: List<String>,
+        linkDependencies: List<KonanLibrary>,
+        metadata: SerializedMetadata,
+        ir: SerializedIr,
+        versions: KonanLibraryVersioning,
+        target: KonanTarget,
+        output: String,
+        moduleName: String,
+        nopack: Boolean,
+        manifestProperties: Properties?,
+        dataFlowGraph: ByteArray?
 ): KonanLibraryLayout {
 
     val library = KonanLibraryWriterImpl(File(output), moduleName, versions, target, nopack)
 
-    llvmModule?.let { library.addKotlinBitcode(it) }
     library.addMetadata(metadata)
     library.addIr(ir)
 

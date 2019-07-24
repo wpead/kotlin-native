@@ -7,7 +7,7 @@ package org.jetbrains.kotlin.backend.konan
 import llvm.LLVMLinkModules2
 import llvm.LLVMModuleRef
 import llvm.LLVMWriteBitcodeToFile
-import org.jetbrains.kotlin.backend.konan.library.impl.buildLibrary
+import org.jetbrains.kotlin.konan.library.impl.buildLibrary
 import org.jetbrains.kotlin.backend.konan.llvm.*
 import org.jetbrains.kotlin.backend.konan.llvm.Llvm
 import org.jetbrains.kotlin.konan.CURRENT
@@ -102,19 +102,18 @@ internal fun produceOutput(context: Context) {
             val manifestProperties = context.config.manifestProperties
 
             val library = buildLibrary(
-                context.config.nativeLibraries,
-                context.config.includeBinaries,
-                neededLibraries,
-                context.serializedMetadata!!,
-                context.serializedIr!!,
-                versions,
-                target,
-                output,
-                libraryName,
-                null,
-                nopack,
-                manifestProperties,
-                context.dataFlowGraph)
+                    context.config.nativeLibraries,
+                    context.config.includeBinaries,
+                    neededLibraries,
+                    context.serializedMetadata!!,
+                    context.serializedIr!!,
+                    versions,
+                    target,
+                    output,
+                    libraryName,
+                    nopack,
+                    manifestProperties,
+                    context.dataFlowGraph)
 
             context.bitcodeFileName = library.mainBitcodeFileName
         }
