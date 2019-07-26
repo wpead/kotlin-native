@@ -97,3 +97,30 @@ fun blockTypeStringRepresentation(type: ObjCBlockPointer): String {
         append(")")
     }
 }
+
+fun KotlinTypeArgument.toStubType(): TypeArgument = when (this) {
+    is KotlinClassifierType -> TypeArgumentStub(this.toStubType())
+    StarProjection -> TypeArgumentStub.StarProjection
+    is KotlinFunctionType -> TypeArgumentStub(TODO())
+    else -> error("Unexpected type argument: $this")
+}
+
+fun KotlinClassifierType.toStubType(): StubType {
+    val typeArguments = arguments.map { it.toStubType()}
+    return if (primitiveBuiltinInfo != null) {
+        val abbreviation = ClassifierStubType(this.classifier)
+        val primitiveClass = ClassifierStubType(primitiveBuiltinInfo.primitiveClassifier)
+        val expanded = ClassifierStubType(primitiveBuiltinInfo.expandedTypeClassifier, listOf(TypeArgumentStub(primitiveClass)))
+        AbbreviationStubType(abbreviation, expanded).also {
+            println("Abbrv: $abbreviation -> $expanded")
+        }
+    } else {
+        ClassifierStubType(this.classifier, typeArguments, nullable)
+    }
+}
+
+fun KotlinType.toStubType(): StubType = when (this) {
+    is KotlinClassifierType -> this.toStubType()
+    is KotlinFunctionType -> TODO()
+    else -> error("Unexpected KotlinType: $this")
+}

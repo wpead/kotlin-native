@@ -80,6 +80,9 @@ data class Classifier(
 val Classifier.type
     get() = KotlinClassifierType(this, arguments = emptyList(), nullable = false)
 
+fun Classifier.primitiveType(primitiveInfo: PrimitiveBuiltinInfo) =
+    KotlinClassifierType(this, arguments = emptyList(), nullable = false, primitiveBuiltinInfo = primitiveInfo)
+
 fun Classifier.typeWith(vararg arguments: KotlinTypeArgument) =
         KotlinClassifierType(this, arguments.toList(), nullable = false)
 
@@ -102,7 +105,8 @@ interface KotlinType : KotlinTypeArgument {
 data class KotlinClassifierType(
         override val classifier: Classifier,
         val arguments: List<KotlinTypeArgument>,
-        val nullable: Boolean
+        val nullable: Boolean,
+        val primitiveBuiltinInfo: PrimitiveBuiltinInfo? = null
 ) : KotlinType {
 
     override fun makeNullableAsSpecified(nullable: Boolean) = if (this.nullable == nullable) {
@@ -155,6 +159,21 @@ data class KotlinFunctionType(
 }
 
 internal val cnamesStructsPackageName = "cnames.structs"
+
+data class PrimitiveBuiltinInfo(
+        val name: String
+) {
+    private val pkg = "kotlinx.cinterop"
+
+    val typeClassifier = Classifier.topLevel(pkg, "${name}Var")
+
+    val expandedTypeClassifier = Classifier.topLevel(pkg, "${name}VarOf")
+
+    val primitiveClassifier = Classifier.topLevel("kotlin", name.capitalize())
+
+    val expandedType: KotlinType =
+            expandedTypeClassifier.typeWith(primitiveClassifier.type)
+}
 
 object KotlinTypes {
     val independent = Classifier.topLevel("kotlin.native.internal", "Independent")
@@ -215,9 +234,12 @@ object KotlinTypes {
                 Classifier.topLevel(pkg, property.name.capitalize())
     }
 
-    private open class TypeAtPackage(val pkg: String) {
-        operator fun getValue(thisRef: KotlinTypes, property: KProperty<*>): KotlinClassifierType =
-                Classifier.topLevel(pkg, property.name.capitalize()).type
+    private open class TypeAtPackage(val pkg: String, val primitiveName: String? = null) {
+        operator fun getValue(thisRef: KotlinTypes, property: KProperty<*>): KotlinClassifierType = if (primitiveName == null) {
+            Classifier.topLevel(pkg, property.name.capitalize()).type
+        } else {
+            Classifier.topLevel(pkg, property.name.capitalize()).primitiveType(PrimitiveBuiltinInfo(primitiveName))
+        }
     }
 
     private object BuiltInType : TypeAtPackage("kotlin")
@@ -320,19 +342,4 @@ abstract class KotlinFile(
         }
     }.sorted()
 
-}
-
-data class KotlinParameter(
-        val name: String,
-        val type: KotlinType,
-        val isVararg: Boolean,
-        val annotations: List<String>
-) {
-    fun render(scope: KotlinScope) = buildString {
-        annotations.forEach { append("$it ") }
-        if (isVararg) append("vararg ")
-        append(name.asSimpleName())
-        append(": ")
-        append(type.render(scope))
-    }
 }

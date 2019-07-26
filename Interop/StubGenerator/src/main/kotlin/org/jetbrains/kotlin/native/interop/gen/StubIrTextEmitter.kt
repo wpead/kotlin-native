@@ -180,7 +180,7 @@ class StubIrTextEmitter(
 
         override fun visitTypealias(element: TypealiasStub, owner: StubContainer?) {
             val alias = renderClassifierDeclaration(element.alias.classifier) + renderTypeArguments(element.alias.typeArguments)
-            val aliasee = renderStubType(element.aliasee)
+            val aliasee = renderStubType(element.underLyingType)
             out("typealias $alias = $aliasee")
         }
 
@@ -446,9 +446,9 @@ class StubIrTextEmitter(
             val nullability = if (stubType.nullable) "?" else ""
             "$classifier$typeArguments$nullability"
         }
-        is RuntimeStubType -> stubType.name + if (stubType.nullable) "?" else ""
         is TypeParameterStubType -> stubType.name + if (stubType.nullable) "?" else ""
         is NestedStubType -> stubType.name + if (stubType.nullable) "?" else ""
+        is AbbreviationStubType -> renderStubType(stubType.abbreviatedType) + if (stubType.nullable) "?" else ""
     }
 
     private fun renderValueUsage(value: ValueStub): String = when (value) {
@@ -630,8 +630,14 @@ class StubIrTextEmitter(
         }
     }
 
-    private fun renderTypeArguments(typeArguments: List<TypeArgumentStub>) = if (typeArguments.isNotEmpty()) {
-        typeArguments.joinToString(", ", "<", ">") { renderStubType(it.type) }
+    private fun renderTypeArguments(typeArguments: List<TypeArgument>) = if (typeArguments.isNotEmpty()) {
+        typeArguments.joinToString(", ", "<", ">") {
+            when (it) {
+                is TypeArgumentStub -> renderStubType(it.type)
+                is TypeArgumentStub.StarProjection -> "*"
+                else -> error("Unexpected type argument kind: $it")
+            }
+        }
     } else {
         ""
     }

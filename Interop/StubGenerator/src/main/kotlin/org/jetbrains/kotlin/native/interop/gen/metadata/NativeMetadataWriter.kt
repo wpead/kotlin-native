@@ -1,7 +1,6 @@
 package org.jetbrains.kotlin.native.interop.gen.metadata
 
 import kotlinx.metadata.impl.PackageWriter
-import org.jetbrains.kotlin.backend.konan.serialization.KonanStringTable
 import org.jetbrains.kotlin.konan.CURRENT
 import org.jetbrains.kotlin.konan.KonanVersion
 import org.jetbrains.kotlin.konan.file.File
@@ -16,12 +15,8 @@ import org.jetbrains.kotlin.metadata.ProtoBuf
 import org.jetbrains.kotlin.metadata.konan.KonanProtoBuf
 import org.jetbrains.kotlin.metadata.serialization.MutableTypeTable
 import org.jetbrains.kotlin.metadata.serialization.MutableVersionRequirementTable
-import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.native.interop.gen.StubIrContext
 import org.jetbrains.kotlin.serialization.StringTableImpl
-import org.jetbrains.kotlin.serialization.konan.KonanMetadataVersion
-import org.jetbrains.kotlin.serialization.konan.KonanSerializerExtension
-import org.jetbrains.kotlin.serialization.konan.SourceFileMap
 
 /**
  * Idea:
@@ -30,44 +25,32 @@ import org.jetbrains.kotlin.serialization.konan.SourceFileMap
 
 class NativePackageWriter(
         private val context: StubIrContext,
-        private val stringTable: StringTableImpl = KonanStringTable()
+        private val typeTable: MutableTypeTable,
+        private val stringTable: StringTableImpl
 ) : PackageWriter(stringTable) {
 
-    val sourceFileMap = SourceFileMap()
-
     private val versionRequirementTable: MutableVersionRequirementTable? = MutableVersionRequirementTable()
-
-    val serializerExtension = KonanSerializerExtension(
-            releaseCoroutines = true,
-            metadataVersion = KonanMetadataVersion(14),
-            sourceFileMap = sourceFileMap,
-            descriptorToIndex = { it.hashCode().toLong() }
-    )
 
     fun write(): SerializedMetadata {
         val libraryProto = KonanProtoBuf.LinkDataLibrary.newBuilder()
         libraryProto.moduleName = "<hello>"
 
-        // empty root
-        val root = ""
-        val rootFragments = listOf(buildFragment(null, "").toByteArray())
-        libraryProto.addPackageFragmentName(root)
+        val packageName = if (context.configuration.pkgName.isEmpty())
+            "lib"
+        else
+            context.createPackageName(context.configuration.pkgName)
 
-        val packageName = if (context.configuration.pkgName.isEmpty()) "lib" else context.createPackageName(context.configuration.pkgName)
+        typeTable.serialize()?.let { t.typeTable = it }
 
-        MutableTypeTable().serialize()?.let { t.typeTable = it }
-
-        val versionRequirementTableProto = versionRequirementTable?.serialize()
-        if (versionRequirementTableProto != null) {
-            t.versionRequirementTable = versionRequirementTableProto
+        versionRequirementTable?.serialize()?.let {
+            t.versionRequirementTable = it
         }
 
-        buildPackageProto(packageName, t)
         val packageFragments = listOf(buildFragment(t.build(), packageName).toByteArray())
         libraryProto.addPackageFragmentName(packageName)
 
-        val packages = listOf(rootFragments, packageFragments)
-        val packageNames = listOf(root, packageName)
+        val packages = listOf(packageFragments)
+        val packageNames = listOf(packageName)
 
         val libraryProtoBytes = libraryProto.build().toByteArray()
         return SerializedMetadata(libraryProtoBytes, packages, packageNames)
@@ -89,9 +72,6 @@ class NativePackageWriter(
                 .build()
     }
 
-    private fun buildPackageProto(packageFqName: String, proto: ProtoBuf.Package.Builder) {
-        serializerExtension.serializePackage(FqName(packageFqName), proto)
-    }
 }
 
 fun produceInteropKLib(
@@ -112,7 +92,6 @@ fun produceInteropKLib(
     val repositories: List<String> = listOf("stdlib")
     val resolver = defaultResolver(repositories, target)
     val defaultLinks = resolver.defaultLinks(noStdLib = false, noDefaultLibs = true)
-    println("Link deps: ${defaultLinks.joinToString { it.libraryName }}")
     KonanLibraryWriterImpl(klibFile, moduleName, version, target).apply {
         addLinkDependencies(defaultLinks)
         addMetadata(metadata)

@@ -384,7 +384,9 @@ fun mirrorPrimitiveType(type: PrimitiveType, declarationMapper: DeclarationMappe
     } else {
         TypeInfo.Primitive(type.getBridgedType(declarationMapper), varClassOf)
     }
-    return TypeMirror.ByValue(varClass.type, info, type.getKotlinType(declarationMapper))
+    val kotlinType = type.getKotlinType(declarationMapper)
+    val primitiveInfo = PrimitiveBuiltinInfo(kotlinType.classifier.topLevelName)
+    return TypeMirror.ByValue(varClass.primitiveType(primitiveInfo), info, kotlinType)
 }
 
 private fun byRefTypeMirror(pointedType: KotlinClassifierType) : TypeMirror.ByRef {

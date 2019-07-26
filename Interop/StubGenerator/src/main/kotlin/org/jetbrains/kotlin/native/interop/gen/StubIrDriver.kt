@@ -4,11 +4,14 @@
  */
 package org.jetbrains.kotlin.native.interop.gen
 
+import org.jetbrains.kotlin.backend.konan.serialization.KonanStringTable
 import org.jetbrains.kotlin.library.SerializedMetadata
+import org.jetbrains.kotlin.metadata.serialization.MutableTypeTable
 import org.jetbrains.kotlin.native.interop.gen.jvm.InteropConfiguration
 import org.jetbrains.kotlin.native.interop.gen.jvm.KotlinPlatform
 import org.jetbrains.kotlin.native.interop.gen.metadata.NativePackageWriter
 import org.jetbrains.kotlin.native.interop.indexer.*
+import org.jetbrains.kotlin.serialization.StringTableImpl
 import java.io.File
 import java.util.*
 
@@ -137,8 +140,10 @@ class StubIrDriver(private val context: StubIrContext) {
                 }
             }
             is InteropGenerationMode.Metadata -> {
-                val kmPackage = StubIrMetadataEmitter(builderResult, bridgeBuilderResult).emit()
-                val packageWriter = NativePackageWriter(context)
+                val stringTable: StringTableImpl = KonanStringTable()
+                val typeTable: MutableTypeTable = MutableTypeTable()
+                val kmPackage = StubIrMetadataEmitter(builderResult, typeTable, stringTable).emit()
+                val packageWriter = NativePackageWriter(context, typeTable, stringTable)
                 kmPackage.accept(packageWriter)
                 mode.output = packageWriter.write()
             }

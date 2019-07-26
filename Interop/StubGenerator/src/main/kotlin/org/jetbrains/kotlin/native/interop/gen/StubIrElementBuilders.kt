@@ -146,8 +146,9 @@ internal class StructStubBuilder(
             PropertyStub(field.name, WrapperStubType(kotlinType), kind)
         }
 
-        val superClass = RuntimeStubType("CStructVar")
-        val rawPtrConstructorParam = ConstructorParameterStub("rawPtr", RuntimeStubType("NativePtr"))
+        val superClass = ClassifierStubType(Classifier.topLevel("kotlinx.cinterop", "CStructVar"))
+        val nativePtrType = ClassifierStubType(Classifier.topLevel("kotlinx.cinterop", "NativePtr"))
+        val rawPtrConstructorParam = ConstructorParameterStub("rawPtr", nativePtrType)
         val superClassInit = SuperClassInit(superClass, listOf(GetConstructorParameter(rawPtrConstructorParam)))
 
         val companionSuper = NestedStubType("Type", superClass)
@@ -205,8 +206,9 @@ internal class StructStubBuilder(
     private fun generateForwardStruct(s: StructDecl): List<StubIrElement> = when (context.platform) {
         KotlinPlatform.JVM -> {
             val classifier = context.getKotlinClassForPointed(s)
-            val superClass = RuntimeStubType("COpaque")
-            val rawPtrConstructorParam = ConstructorParameterStub("rawPtr", RuntimeStubType("NativePtr"))
+            val superClass = ClassifierStubType(Classifier.topLevel("kotlinx.cinterop", "COpaque"))
+            val nativePtrType = ClassifierStubType(Classifier.topLevel("kotlinx.cinterop", "NativePtr"))
+            val rawPtrConstructorParam = ConstructorParameterStub("rawPtr", nativePtrType)
             val superClassInit = SuperClassInit(superClass, listOf(GetConstructorParameter(rawPtrConstructorParam)))
             val origin = StubOrigin.Struct(s)
             listOf(ClassStub.Simple(classifier, ClassStubModality.NONE, listOf(rawPtrConstructorParam), superClassInit, origin = origin))
@@ -251,7 +253,7 @@ internal class EnumStubBuilder(
         val enum = ClassStub.Enum(clazz, canonicalEntries,
                 origin = StubOrigin.Enum(enumDef),
                 constructorParameters = listOf(valueParamStub),
-                interfaces = listOf(RuntimeStubType("CEnum"))
+                interfaces = listOf(ClassifierStubType(Classifier.topLevel("kotlinx.cinterop", "CEnum")))
         )
         context.bridgeComponentsBuilder.enumToTypeMirror[enum] = baseTypeMirror
 
@@ -374,12 +376,11 @@ internal class FunctionStubBuilder(
             }
         }
 
-        val returnType = WrapperStubType(if (func.returnsVoid()) {
-            KotlinTypes.unit
+        val returnType = if (func.returnsVoid()) {
+            KotlinTypes.unit.toStubType()
         } else {
-            context.mirror(func.returnType).argType
-        })
-
+            context.mirror(func.returnType).argType.toStubType()
+        }
 
         val annotations: List<AnnotationStub>
         val mustBeExternal: Boolean

@@ -60,15 +60,26 @@ class TypeParameterStub(
         val upperBound: StubType? = null
 ) {
     fun asType(nullable: Boolean): StubType =
-            TypeParameterStubType(name, nullable = nullable)
+            TypeParameterStubType(name, this, nullable = nullable)
 
 }
 
+interface TypeArgument
+
 // Add variance if needed
-class TypeArgumentStub(val type: StubType)
+class TypeArgumentStub(val type: StubType) : TypeArgument {
+    object StarProjection : TypeArgument {
+        override fun toString(): String =
+                "STAR_PROJ"
+    }
+
+    override fun toString(): String =
+            "TypeArgument($type)"
+}
 
 /**
  * Wrapper over [KotlinType].
+ * TODO: It's better to get rid of [KotlinType]  at all.
  */
 class WrapperStubType(
         val kotlinType: KotlinType
@@ -86,25 +97,27 @@ class WrapperStubType(
  */
 class ClassifierStubType(
         val classifier: Classifier,
-        val typeArguments: List<TypeArgumentStub> = emptyList(),
-        override val nullable: Boolean = false
-) : StubType()
-
-
-/**
- * Type that is belongs to [kotlinx.cinterop].
- */
-class RuntimeStubType(
-        val name: String,
+        val typeArguments: List<TypeArgument> = emptyList(),
         override val nullable: Boolean = false
 ) : StubType() {
-    val fqName: String
-        get() = "kotlinx.cinterop.$name"
+    override fun toString(): String =
+            "ClassifierStubType(fqName = ${classifier.fqName}, typeArguments = ${typeArguments.joinToString { it.toString() }})"
 }
 
 /**
- * Type that is tested in another type declaration.
- * TODO: Rethink.
+ *  Represents
+ *      typealias
+ */
+class AbbreviationStubType(
+    val abbreviatedType: StubType,
+    val classifierStubType: ClassifierStubType,
+    override val nullable: Boolean = false
+) : StubType()
+
+/**
+ * Type that is nested in another type declaration.
+ * TODO: [ClassifierStubType] should have a reference to corresponding class declaration
+ *  which may have a reference to a parent class
  */
 class NestedStubType(
         val name: String,
@@ -113,7 +126,6 @@ class NestedStubType(
 ) : StubType() {
     val fqName: String
         get() = when (parent) {
-            is RuntimeStubType -> "${parent.fqName}.$name"
             is ClassifierStubType -> "${parent.classifier.fqName}.$name"
             else -> error("$parent cannot have nested declarations.")
         }
@@ -124,6 +136,7 @@ class NestedStubType(
  */
 class TypeParameterStubType(
         val name: String,
+        val source: TypeParameterStub,
         override val nullable: Boolean = false
 ) : StubType()
 
@@ -166,6 +179,8 @@ interface AnnotationHolder {
     val annotations: List<AnnotationStub>
 }
 
+// TODO: Should annotations have fqName?
+//  Or even all elements of StubIr?
 sealed class AnnotationStub {
     sealed class ObjC : AnnotationStub() {
         object ConsumesReceiver : ObjC()
@@ -368,7 +383,7 @@ sealed class PropertyAccessor : FunctionalStub {
 
         class MemberAt(
                 val offset: Long,
-                val typeArguments: List<TypeArgumentStub> = emptyList(),
+                val typeArguments: List<TypeArgument> = emptyList(),
                 val isPassedByValue: Boolean
         ) : Getter() {
             override val annotations: List<AnnotationStub> = emptyList()
@@ -403,7 +418,7 @@ sealed class PropertyAccessor : FunctionalStub {
         class MemberAt(
                 val offset: Long,
                 override val annotations: List<AnnotationStub> = emptyList(),
-                val typeArguments: List<TypeArgumentStub> = emptyList()
+                val typeArguments: List<TypeArgument> = emptyList()
         ) : Setter()
 
         class WriteBits(
@@ -455,7 +470,7 @@ class EnumEntryStub(
 
 class TypealiasStub(
         val alias: ClassifierStubType,
-        val aliasee: StubType
+        val underLyingType: StubType
 ) : StubIrElement {
 
     override fun <T, R> accept(visitor: StubIrVisitor<T, R>, data: T) =
