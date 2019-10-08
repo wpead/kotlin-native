@@ -71,9 +71,18 @@ ext {
     kotlinScriptRuntimeModule="org.jetbrains.kotlin:kotlin-script-runtime:${kotlinVersion}"
     kotlinNativeUtilsModule="org.jetbrains.kotlin:kotlin-native-utils:${kotlinVersion}"
     kotlinUtilKliMetadatabModule="org.jetbrains.kotlin:kotlin-util-klib-metadata:${kotlinVersion}"
+    kotlinKotlinXMetadataKlib="org.jetbrains.kotlinx:kotlinx-metadata-klib:0.0.1"
 
     konanVersionFull = KonanVersionGeneratedKt.getCurrentKonanVersion()
     gradlePluginVersion = konanVersionFull
+}
+
+configurations.all {
+    resolutionStrategy {
+        // force certain versions of dependencies (including transitive)
+        //  *append new forced modules:
+        force "org.jetbrains.kotlin:kotlin-util-klib-metadata:$kotlinVersion"
+    }
 }
 
 allprojects {
@@ -98,6 +107,7 @@ allprojects {
         maven {
             url kotlinCompilerRepo
         }
+        maven { url "/Users/jetbrains/IdeaProjects/kotlin/build/repo" }
     }
 
     setupHostAndTarget()
