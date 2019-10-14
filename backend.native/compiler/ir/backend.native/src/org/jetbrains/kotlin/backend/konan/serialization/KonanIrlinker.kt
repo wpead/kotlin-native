@@ -22,9 +22,18 @@ import org.jetbrains.kotlin.backend.konan.descriptors.konanLibrary
 import org.jetbrains.kotlin.backend.konan.llvm.KonanMangler
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
+import org.jetbrains.kotlin.descriptors.konan.DeserializedKlibModuleOrigin
+import org.jetbrains.kotlin.descriptors.konan.klibModuleOrigin
+import org.jetbrains.kotlin.descriptors.konan.kotlinLibrary
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.descriptors.IrBuiltIns
 import org.jetbrains.kotlin.ir.util.SymbolTable
+import org.jetbrains.kotlin.library.BaseKotlinLibrary
+import org.jetbrains.kotlin.resolve.descriptorUtil.module
+
+// TODO: Should be moved out from this file
+private fun BaseKotlinLibrary.isMetadataBasedLibrary() =
+        manifestProperties["noir"] == "true"
 
 class KonanIrLinker(
         currentModule: ModuleDescriptor,
@@ -35,6 +44,13 @@ class KonanIrLinker(
         exportedDependencies: List<ModuleDescriptor>
 ) : KotlinIrLinker(logger, builtIns, symbolTable, exportedDependencies, forwardModuleDescriptor, 0L),
     DescriptorUniqIdAware by DeserializedDescriptorUniqIdAware {
+
+    private fun ModuleDescriptor.isFromMetadataBasedLibrary() =
+        if (klibModuleOrigin !is DeserializedKlibModuleOrigin) false
+        else kotlinLibrary.isMetadataBasedLibrary()
+
+    private fun ModuleDescriptor.hasNoIrFiles() =
+            isForwardDeclarationModule || isFromMetadataBasedLibrary()
 
     override val descriptorReferenceDeserializer =
             KonanDescriptorReferenceDeserializer(currentModule, KonanMangler, builtIns, resolvedForwardDeclarations)
@@ -58,7 +74,7 @@ class KonanIrLinker(
             moduleDescriptor.konanLibrary!!.file(fileIndex)
 
     override fun readFileCount(moduleDescriptor: ModuleDescriptor) =
-            moduleDescriptor.run { if (isForwardDeclarationModule) 0 else konanLibrary!!.fileCount() }
+            moduleDescriptor.run { if (this.hasNoIrFiles()) 0 else konanLibrary!!.fileCount() }
 
     private val ModuleDescriptor.userName get() = konanLibrary!!.libraryFile.absolutePath
 
@@ -67,6 +83,9 @@ class KonanIrLinker(
     override fun handleNoModuleDeserializerFound(key: UniqId): DeserializationState {
         return globalDeserializationState
     }
+
+    override fun DeclarationDescriptor.hasNoDeserializedForm(): Boolean =
+            module.hasNoIrFiles()
 
     val modules: Map<String, IrModuleFragment> get() = mutableMapOf<String, IrModuleFragment>().apply {
         deserializersForModules.filter { !it.key.isForwardDeclarationModule }.forEach {

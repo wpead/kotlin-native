@@ -276,6 +276,8 @@ private fun processCLib(args: Array<String>, additionalArgs: Map<String, Any> = 
 
         def.manifestAddendProperties["interop"] = "true"
 
+        def.manifestAddendProperties["noir"] = "true"
+
         stubIrContext.addManifestProperties(def.manifestAddendProperties)
 
         manifestAddend?.parentFile?.mkdirs()
