@@ -61,10 +61,6 @@ open class CommonInteropArguments(val argParser: ArgParser) {
             description = "save temporary files to the given directory")
 }
 
-enum class Mode {
-    TEXT, METADATA
-}
-
 class CInteropArguments(argParser: ArgParser =
                                 ArgParser("cinterop",
                                         prefixStyle = ArgParser.OPTION_PREFIX_STYLE.JVM)): CommonInteropArguments(argParser) {
@@ -95,11 +91,11 @@ class CInteropArguments(argParser: ArgParser =
             description = "additional linker option").multiple()
     val linker by argParser.option(ArgType.String, description = "use specified linker")
 
-    val generationMode by argParser.option(ArgType.enumChoice<Mode>(), "mode",
+    val generationMode by argParser.option(ArgType.Choice(listOf("text", "metadata")), "mode",
             description = """
                 Metadata generation mode is faster but it is not stable yet.
             """.trimIndent()
-    ).default(Mode.TEXT)
+    ).default("text")
 }
 
 class JSInteropArguments(argParser: ArgParser = ArgParser("jsinterop",

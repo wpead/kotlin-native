@@ -254,9 +254,11 @@ private fun processCLib(args: Array<String>, additionalArgs: Map<String, Any> = 
         {}
     }
 
+    // TODO:
     val mode = when (cinteropArguments.generationMode) {
-        Mode.TEXT -> InteropGenerationMode.Textual(outKtFile, File(outCFile.absolutePath))
-        Mode.METADATA -> InteropGenerationMode.Metadata(File(outCFile.absolutePath))
+        "text" -> InteropGenerationMode.Textual(outKtFile, File(outCFile.absolutePath))
+        "metadata" -> InteropGenerationMode.Metadata(File(outCFile.absolutePath))
+        else -> error("Unexpected generation mode value")
     }
 
     val stubIrContext = StubIrContext(logger, configuration, nativeIndex, imports, flavor, libName)

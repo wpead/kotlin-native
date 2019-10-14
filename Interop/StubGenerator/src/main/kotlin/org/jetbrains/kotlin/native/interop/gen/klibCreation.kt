@@ -25,11 +25,10 @@ fun createKlib(
 ) {
     val packageName = "interop"
     val serializedMetadata = createSerializedMetadataFrom(moduleName, packageName, mode.result)
-    val dependencies = resolveDependencies(target)
     val version = createLibraryVersion()
 
     KonanLibraryWriterImpl(File(outputKlibPath), moduleName, version, target).apply {
-        addLinkDependencies(dependencies)
+        addLinkDependencies(resolveDependencies(target))
         addMetadata(serializedMetadata)
         addNativeBitcode(bitcodeBridgesPath)
         addManifestAddend(manifest)
