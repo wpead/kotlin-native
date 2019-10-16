@@ -475,7 +475,8 @@ internal class GlobalStubBuilder(
                             }
                             KotlinPlatform.NATIVE -> {
                                 val cCallAnnotation = AnnotationStub.CCall.Symbol("${context.generateNextUniqueId("knifunptr_")}_${global.name}_setter")
-                                PropertyAccessor.Setter.ExternalSetter(listOf(cCallAnnotation)).also {
+                                val parameter = FunctionParameterStub("value", kotlinType.toStubIrType())
+                                PropertyAccessor.Setter.ExternalSetter(parameter, listOf(cCallAnnotation)).also {
                                     context.wrapperComponentsBuilder.setterToWrapperInfo[it] = WrapperGenerationInfo(global)
                                 }
                             }

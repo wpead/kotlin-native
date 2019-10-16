@@ -6,6 +6,8 @@ package org.jetbrains.kotlin.native.interop.gen
 
 import kotlinx.metadata.*
 import kotlinx.metadata.klib.annotations
+import kotlinx.metadata.klib.getterAnnotations
+import kotlinx.metadata.klib.setterAnnotations
 import org.jetbrains.kotlin.utils.addIfNotNull
 
 class StubIrMetadataEmitter(
@@ -40,9 +42,26 @@ class StubIrMetadataEmitter(
                     km.annotations += element.annotations.map { it.map() }
                 }
 
-        override fun visitProperty(element: PropertyStub, data: StubContainer?): Any {
-            TODO("not implemented")
-        }
+        override fun visitProperty(element: PropertyStub, data: StubContainer?): Any =
+                KmProperty(element.flags, element.name, element.getterFlags, element.setterFlags).also { km ->
+                    km.returnType = element.type.map()
+                    if (element.kind is PropertyStub.Kind.Var) {
+                        val setter = element.kind.setter
+                        km.setterAnnotations += setter.annotations.map { it.map() }
+                        val setterParameter = setter.parameters.single()
+                        km.setterParameter = KmValueParameter(setterParameter.flags, setterParameter.name).also { km ->
+                            km.type = setterParameter.type.map()
+                        }
+                    }
+                    km.getterAnnotations += when (element.kind) {
+                        is PropertyStub.Kind.Val -> element.kind.getter.annotations.map { it.map() }
+                        is PropertyStub.Kind.Var -> element.kind.getter.annotations.map { it.map() }
+                        is PropertyStub.Kind.Constant -> emptyList()
+                    }
+                    if (element.kind is PropertyStub.Kind.Constant) {
+
+                    }
+                }
 
         override fun visitConstructor(constructorStub: ConstructorStub, data: StubContainer?): Any {
             TODO("not implemented")
@@ -104,24 +123,25 @@ class StubIrMetadataEmitter(
         TypeArgument.Variance.OUT -> KmVariance.OUT
     }
 
-    private fun AnnotationStub.map(): KmAnnotation = when (this) {
-        AnnotationStub.ObjC.ConsumesReceiver -> TODO()
-        AnnotationStub.ObjC.ReturnsRetained -> TODO()
-        is AnnotationStub.ObjC.Method -> TODO()
-        is AnnotationStub.ObjC.Factory -> TODO()
-        AnnotationStub.ObjC.Consumed -> TODO()
-        is AnnotationStub.ObjC.Constructor -> TODO()
-        is AnnotationStub.ObjC.ExternalClass -> TODO()
-        AnnotationStub.CCall.CString -> TODO()
-        AnnotationStub.CCall.WCString -> TODO()
-        is AnnotationStub.CCall.Symbol -> KmAnnotation(
-                "kotlinx/cinterop/internal/CCall",
-                mapOf("id" to KmAnnotationArgument.StringValue(symbolName))
-        )
-        is AnnotationStub.CStruct -> TODO()
-        is AnnotationStub.CNaturalStruct -> TODO()
-        is AnnotationStub.CLength -> TODO()
-        is AnnotationStub.Deprecated -> TODO()
+    private fun AnnotationStub.map(): KmAnnotation {
+        val args = when (this) {
+            AnnotationStub.ObjC.ConsumesReceiver -> TODO()
+            AnnotationStub.ObjC.ReturnsRetained -> TODO()
+            is AnnotationStub.ObjC.Method -> TODO()
+            is AnnotationStub.ObjC.Factory -> TODO()
+            AnnotationStub.ObjC.Consumed -> TODO()
+            is AnnotationStub.ObjC.Constructor -> TODO()
+            is AnnotationStub.ObjC.ExternalClass -> TODO()
+            AnnotationStub.CCall.CString -> TODO()
+            AnnotationStub.CCall.WCString -> TODO()
+            is AnnotationStub.CCall.Symbol ->
+                    mapOf("id" to KmAnnotationArgument.StringValue(symbolName))
+            is AnnotationStub.CStruct -> TODO()
+            is AnnotationStub.CNaturalStruct -> TODO()
+            is AnnotationStub.CLength -> TODO()
+            is AnnotationStub.Deprecated -> TODO()
+        }
+        return KmAnnotation(classifier.fqNameSerialized, args)
     }
 
     private val FunctionStub.flags: Flags
@@ -130,6 +150,44 @@ class StubIrMetadataEmitter(
                 Flag.Function.IS_EXTERNAL,
                 Flag.HAS_ANNOTATIONS
         ).let { flagsOf(*it) }
+
+    private val PropertyStub.flags: Flags
+        get() = listOfNotNull(
+                Flag.IS_PUBLIC,
+                Flag.Property.IS_DECLARATION,
+                Flag.IS_FINAL,
+                when (kind) {
+                    is PropertyStub.Kind.Val -> null
+                    is PropertyStub.Kind.Var -> Flag.Property.IS_VAR
+                    is PropertyStub.Kind.Constant -> Flag.Property.IS_CONST
+                },
+                when (kind) {
+                    is PropertyStub.Kind.Constant -> null
+                    is PropertyStub.Kind.Val,
+                    is PropertyStub.Kind.Var -> Flag.Property.HAS_GETTER
+                },
+                when (kind) {
+                    is PropertyStub.Kind.Constant -> null
+                    is PropertyStub.Kind.Val -> null
+                    is PropertyStub.Kind.Var -> Flag.Property.HAS_SETTER
+                }
+        ).let { flagsOf(*it.toTypedArray()) }
+
+    private val PropertyStub.getterFlags: Flags
+        get() = listOfNotNull(
+                Flag.HAS_ANNOTATIONS,
+                Flag.IS_PUBLIC,
+                Flag.IS_FINAL,
+                Flag.PropertyAccessor.IS_EXTERNAL
+        ).let { flagsOf(*it.toTypedArray()) }
+
+    private val PropertyStub.setterFlags: Flags
+        get() = listOfNotNull(
+                Flag.HAS_ANNOTATIONS,
+                Flag.IS_PUBLIC,
+                Flag.IS_FINAL,
+                Flag.PropertyAccessor.IS_EXTERNAL
+        ).let { flagsOf(*it.toTypedArray()) }
 
     private val StubType.flags: Flags
         get() = listOfNotNull(

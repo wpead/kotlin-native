@@ -567,7 +567,10 @@ private class ObjCPropertyStubBuilder(
         val type = property.getType(container.classOrProtocol)
         val kotlinType = context.mirror(type).argType
         val getter = PropertyAccessor.Getter.ExternalGetter(annotations = getterBuilder.annotations)
-        val setter = property.setter?.let { PropertyAccessor.Setter.ExternalSetter(annotations = setterMethod!!.annotations) }
+        val setter = property.setter?.let {
+            val parameter = FunctionParameterStub("value", kotlinType.toStubIrType())
+            PropertyAccessor.Setter.ExternalSetter(parameter, setterMethod!!.annotations)
+        }
         val kind = setter?.let { PropertyStub.Kind.Var(getter, it) } ?: PropertyStub.Kind.Val(getter)
         val modality = MemberStubModality.FINAL
         val receiver = when (container) {
