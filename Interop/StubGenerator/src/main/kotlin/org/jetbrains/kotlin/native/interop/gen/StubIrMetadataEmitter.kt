@@ -30,9 +30,11 @@ class StubIrMetadataEmitter(
             TODO("not implemented")
         }
 
-        override fun visitTypealias(element: TypealiasStub, data: StubContainer?): Any {
-            TODO("not implemented")
-        }
+        override fun visitTypealias(element: TypealiasStub, data: StubContainer?): Any =
+                KmTypeAlias(element.flags, element.alias.topLevelName).also { km ->
+                    km.underlyingType = element.aliasee.map()
+                    km.expandedType = element.aliasee.expandedType.map()
+                }
 
         override fun visitFunction(element: FunctionStub, data: StubContainer?): Any =
                 KmFunction(element.flags, element.name).also { km ->
@@ -81,7 +83,7 @@ class StubIrMetadataEmitter(
             km.arguments += typeArguments.map { it.map() }
             if (isTypealias) {
                 km.abbreviatedType = abbreviatedType
-                km.classifier = expandedType!!.map().classifier
+                km.classifier = expandedType.map().classifier
             } else {
                 km.classifier = KmClassifier.Class(classifier.fqNameSerialized)
             }
@@ -192,6 +194,11 @@ class StubIrMetadataEmitter(
     private val StubType.flags: Flags
         get() = listOfNotNull(
                 if (nullable) Flag.Type.IS_NULLABLE else null
+        ).let { flagsOf(*it.toTypedArray()) }
+
+    private val TypealiasStub.flags: Flags
+        get() = listOfNotNull(
+                Flag.IS_PUBLIC
         ).let { flagsOf(*it.toTypedArray()) }
 
     private val FunctionParameterStub.flags: Flags

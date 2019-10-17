@@ -31,12 +31,13 @@ class ClassifierStubType(
 val ClassifierStubType.isTypealias: Boolean
     get() = underlyingType != null
 
-val ClassifierStubType.expandedType: StubType?
+val StubType.expandedType: StubType
     get() {
-        if (!isTypealias) return null
-        var expandedType = underlyingType
+        if (this !is ClassifierStubType) return this
+        if (!isTypealias) return this
+        var expandedType = underlyingType!!
         while (expandedType is ClassifierStubType && expandedType.isTypealias) {
-            expandedType = expandedType.underlyingType
+            expandedType = expandedType.underlyingType!!
         }
         return expandedType
     }
