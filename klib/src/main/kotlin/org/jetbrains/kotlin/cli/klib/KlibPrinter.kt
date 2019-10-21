@@ -5,6 +5,8 @@
 
 package org.jetbrains.kotlin.cli.klib
 
+import org.jetbrains.kotlin.backend.common.serialization.DescriptorUniqIdAware
+import org.jetbrains.kotlin.backend.common.serialization.DeserializedDescriptorUniqIdAware
 import org.jetbrains.kotlin.backend.konan.descriptors.getPackageFragments
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.descriptors.*
@@ -12,7 +14,7 @@ import org.jetbrains.kotlin.descriptors.impl.DeclarationDescriptorVisitorEmptyBo
 import org.jetbrains.kotlin.renderer.*
 import org.jetbrains.kotlin.utils.Printer
 
-class KlibPrinter(out: Appendable) {
+class KlibPrinter(private val withUniqId: Boolean, out: Appendable) : DescriptorUniqIdAware by DeserializedDescriptorUniqIdAware {
 
     val printer = Printer(out, 1, "    ")
 
@@ -108,6 +110,7 @@ class KlibPrinter(out: Appendable) {
         }
 
         override fun visitFunctionDescriptor(descriptor: FunctionDescriptor, data: Unit) {
+            if (withUniqId) printer.println("uniqid = ${descriptor.getUniqId()}")
             printer.println(descriptor.render())
         }
 

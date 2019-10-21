@@ -109,6 +109,10 @@ interface StubElementWithOrigin : StubIrElement {
     val origin: StubOrigin
 }
 
+interface UniqIdOwner {
+    val uniqId: Long
+}
+
 interface AnnotationHolder {
     val annotations: List<AnnotationStub>
 }

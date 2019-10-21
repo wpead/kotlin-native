@@ -7,6 +7,7 @@ import org.jetbrains.kotlin.backend.common.serialization.DescriptorTable
 import org.jetbrains.kotlin.backend.common.serialization.metadata.KlibMetadataMonolithicSerializer
 import org.jetbrains.kotlin.backend.konan.descriptors.isForwardDeclarationModule
 import org.jetbrains.kotlin.backend.konan.descriptors.konanLibrary
+import org.jetbrains.kotlin.backend.konan.ir.InteropStubsIrProvider
 import org.jetbrains.kotlin.backend.konan.ir.KonanSymbols
 import org.jetbrains.kotlin.backend.konan.llvm.*
 import org.jetbrains.kotlin.backend.konan.lower.ExpectToActualDefaultValueCopier
@@ -24,6 +25,7 @@ import org.jetbrains.kotlin.ir.util.addChild
 import org.jetbrains.kotlin.ir.util.addFile
 import org.jetbrains.kotlin.ir.util.file
 import org.jetbrains.kotlin.konan.target.CompilerOutputKind
+import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi2ir.Psi2IrConfiguration
 import org.jetbrains.kotlin.psi2ir.Psi2IrTranslator
 import org.jetbrains.kotlin.utils.DFS
@@ -147,7 +149,6 @@ internal val psiToIrPhase = konanUnitPhase(
             // Note: using [llvmModuleSpecification] since this phase produces IR for generating single LLVM module.
 
             val exportedDependencies = (getExportedDependencies() + modulesWithoutDCE).distinct()
-
             val deserializer = KonanIrLinker(
                     moduleDescriptor,
                     this as LoggingContext,
@@ -179,9 +180,12 @@ internal val psiToIrPhase = konanUnitPhase(
 
             val functionIrClassFactory = BuiltInFictitiousFunctionIrClassFactory(
                     symbolTable, generatorContext.irBuiltIns, reflectionTypes)
+
+            val interopStubsIrProvider = InteropStubsIrProvider(symbolTable, generatorContext.typeTranslator)
+
             val symbols = KonanSymbols(this, symbolTable, symbolTable.lazyWrapper, functionIrClassFactory)
             val module = translator.generateModuleFragment(generatorContext, environment.getSourceFiles(),
-                    deserializer, listOf(functionIrClassFactory))
+                    deserializer, listOf(interopStubsIrProvider, functionIrClassFactory))
 
             if (this.stdlibModule in modulesWithoutDCE) {
                 functionIrClassFactory.buildAllClasses()
@@ -194,6 +198,8 @@ internal val psiToIrPhase = konanUnitPhase(
             functionIrClassFactory.module =
                     (listOf(irModule!!) + deserializer.modules.values)
                             .single { it.descriptor.isKonanStdlib() }
+
+//            interopStubsIrProvider.attachTo(irModule!!)
         },
         name = "Psi2Ir",
         description = "Psi to IR conversion",

@@ -17,40 +17,52 @@
 package org.jetbrains.kotlin.backend.konan.serialization
 
 import org.jetbrains.kotlin.backend.common.LoggingContext
+import org.jetbrains.kotlin.backend.common.descriptors.WrappedDeclarationDescriptor
 import org.jetbrains.kotlin.backend.common.serialization.*
 import org.jetbrains.kotlin.backend.konan.descriptors.konanLibrary
 import org.jetbrains.kotlin.backend.konan.llvm.KonanMangler
+import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.descriptors.konan.DeserializedKlibModuleOrigin
 import org.jetbrains.kotlin.descriptors.konan.klibModuleOrigin
 import org.jetbrains.kotlin.descriptors.konan.kotlinLibrary
+import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
+import org.jetbrains.kotlin.ir.declarations.impl.IrClassImpl
+import org.jetbrains.kotlin.ir.declarations.impl.IrFileImpl
 import org.jetbrains.kotlin.ir.descriptors.IrBuiltIns
+import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
+import org.jetbrains.kotlin.ir.symbols.IrSymbol
+import org.jetbrains.kotlin.ir.symbols.impl.IrFileSymbolImpl
+import org.jetbrains.kotlin.ir.util.NaiveSourceBasedFileEntryImpl
 import org.jetbrains.kotlin.ir.util.SymbolTable
 import org.jetbrains.kotlin.library.BaseKotlinLibrary
+import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.resolve.descriptorUtil.module
 
 // TODO: Should be moved out from this file
 private fun BaseKotlinLibrary.isMetadataBasedLibrary() =
         manifestProperties["noir"] == "true"
 
+internal fun ModuleDescriptor.isFromMetadataBasedLibrary() =
+        if (klibModuleOrigin !is DeserializedKlibModuleOrigin) false
+        else kotlinLibrary.isMetadataBasedLibrary()
+
 class KonanIrLinker(
         currentModule: ModuleDescriptor,
         logger: LoggingContext,
         builtIns: IrBuiltIns,
         symbolTable: SymbolTable,
-        forwardModuleDescriptor: ModuleDescriptor?,
+        private val forwardModuleDescriptor: ModuleDescriptor?,
         exportedDependencies: List<ModuleDescriptor>
-) : KotlinIrLinker(logger, builtIns, symbolTable, exportedDependencies, forwardModuleDescriptor, 0L),
+) : KotlinIrLinker(logger, builtIns, symbolTable, exportedDependencies, 0L),
     DescriptorUniqIdAware by DeserializedDescriptorUniqIdAware {
-
-    private fun ModuleDescriptor.isFromMetadataBasedLibrary() =
-        if (klibModuleOrigin !is DeserializedKlibModuleOrigin) false
-        else kotlinLibrary.isMetadataBasedLibrary()
 
     private fun ModuleDescriptor.hasNoIrFiles() =
             isForwardDeclarationModule || isFromMetadataBasedLibrary()
+
+    private val forwardDeclarations = mutableSetOf<IrSymbol>()
 
     override val descriptorReferenceDeserializer =
             KonanDescriptorReferenceDeserializer(currentModule, KonanMangler, builtIns, resolvedForwardDeclarations)
@@ -80,12 +92,55 @@ class KonanIrLinker(
 
     override fun checkAccessibility(declarationDescriptor: DeclarationDescriptor) = true
 
-    override fun handleNoModuleDeserializerFound(key: UniqId): DeserializationState {
+    override fun handleNoModuleDeserializerFound(key: UniqId): DeserializationState<*> {
         return globalDeserializationState
     }
 
     override fun DeclarationDescriptor.hasNoDeserializedForm(): Boolean =
             module.hasNoIrFiles()
+
+    override fun declareForwardDeclarations() {
+        if (forwardModuleDescriptor == null) return
+
+        val packageFragments = forwardDeclarations.map { it.descriptor.findPackage() }.distinct()
+
+        // We don't bother making a real IR module here, as we have no need in it any later.
+        // All we need is just to declare forward declarations in the symbol table
+        // In case you need a full fledged module, turn the forEach into a map and collect
+        // produced files into an IrModuleFragment.
+
+        packageFragments.forEach { packageFragment ->
+            val symbol = IrFileSymbolImpl(packageFragment)
+            val file = IrFileImpl(NaiveSourceBasedFileEntryImpl("forward declarations pseudo-file"), symbol)
+            val symbols = forwardDeclarations
+                    .filter { !it.isBound }
+                    .filter { it.descriptor.findPackage() == packageFragment }
+            val declarations = symbols.map {
+
+                val classDescriptor = it.descriptor as ClassDescriptor
+                val declaration = symbolTable.declareClass(
+                        UNDEFINED_OFFSET, UNDEFINED_OFFSET, irrelevantOrigin,
+                        classDescriptor,
+                        classDescriptor.modality
+                ) { symbol: IrClassSymbol -> IrClassImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, irrelevantOrigin, symbol) }
+                        .also {
+                            it.parent = file
+                        }
+                declaration
+
+            }
+            file.declarations.addAll(declarations)
+        }
+    }
+
+    override fun handleDeserializedSymbol(symbol: IrSymbol) {
+        if (symbol.descriptor is ClassDescriptor &&
+                symbol.descriptor !is WrappedDeclarationDescriptor<*> &&
+                symbol.descriptor.module.isForwardDeclarationModule
+        ) {
+            forwardDeclarations.add(symbol)
+        }
+    }
 
     val modules: Map<String, IrModuleFragment> get() = mutableMapOf<String, IrModuleFragment>().apply {
         deserializersForModules.filter { !it.key.isForwardDeclarationModule }.forEach {

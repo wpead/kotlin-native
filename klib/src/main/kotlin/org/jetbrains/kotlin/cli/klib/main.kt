@@ -150,7 +150,7 @@ class Library(val name: String, val requestedRepository: String?, val target: St
         library?.libraryFile?.deleteRecursively()
     }
 
-    fun contents(output: Appendable = out) {
+    fun contents(withUniqId: Boolean, output: Appendable = out) {
 
         val storageManager = LockBasedStorageManager("klib")
         val library = libraryInRepoOrCurrentDir(repository, name)
@@ -175,7 +175,7 @@ class Library(val name: String, val requestedRepository: String?, val target: St
             allModules.forEach { it.setDependencies(allModules) }
         }
 
-        KlibPrinter(output).print(module)
+        KlibPrinter(withUniqId, output).print(module)
     }
 }
 
@@ -200,8 +200,12 @@ fun main(args: Array<String>) {
 
     val library = Library(command.library, repository, target)
 
+
     when (command.verb) {
-        "contents"  -> library.contents()
+        "contents"  -> {
+            val withUniqId = command.options["-with-uniq-id"]?.isNotEmpty() ?: false
+            library.contents(withUniqId)
+        }
         "info"      -> library.info()
         "install"   -> library.install()
         "remove"    -> library.remove()

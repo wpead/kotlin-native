@@ -5,14 +5,13 @@
 package org.jetbrains.kotlin.native.interop.gen
 
 import kotlinx.metadata.*
-import kotlinx.metadata.klib.annotations
-import kotlinx.metadata.klib.getterAnnotations
-import kotlinx.metadata.klib.setterAnnotations
+import kotlinx.metadata.klib.*
 import org.jetbrains.kotlin.utils.addIfNotNull
 
 class StubIrMetadataEmitter(
         private val stubIrBuilderResult: StubIrBuilderResult
-) {
+) : InteropMangler by KotlinLikeInteropMangler() {
+
     fun emit(): KmPackage = stubIrBuilderResult.stubs.accept(packageProducer, null)
 
     private val packageProducer = object : SimpleStubIrVisitor<Nothing?, KmPackage>() {
@@ -42,6 +41,10 @@ class StubIrMetadataEmitter(
                     km.valueParameters += element.parameters.map { it.map() }
                     km.typeParameters += element.typeParameters.map { it.map() }
                     km.annotations += element.annotations.map { it.map() }
+                    km.uniqId = when (val origin = element.origin) {
+                        is StubOrigin.Function -> DescriptorUniqId(origin.function.uniqueSymbolName.hashMangle)
+                        else -> error("Unsupported origin $origin")
+                    }
                 }
 
         override fun visitProperty(element: PropertyStub, data: StubContainer?): Any =

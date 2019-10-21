@@ -186,7 +186,8 @@ internal class FinallyBlocksLowering(val context: Context): FileLoweringPass, Ir
                 false,
                 false,
                 false,
-                false)
+                false,
+                isExpect = false)
         )
         return descriptor
     }

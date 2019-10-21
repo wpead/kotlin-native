@@ -108,6 +108,7 @@ allprojects {
             url kotlinCompilerRepo
         }
         maven { url "/Users/jetbrains/IdeaProjects/kotlin/build/repo" }
+        maven { url "https://teamcity.jetbrains.com/guestAuth/app/rest/builds/buildType:(id:Kotlin_Protobuf),status:SUCCESS,pinned:true,tag:2.6.1/artifacts/content/internal/repo/" }
     }
 
     setupHostAndTarget()
@@ -206,6 +207,7 @@ dependencies {
     distPack "org.jetbrains.kotlin:kotlin-native-shared:$konanVersion"
     distPack "org.jetbrains.kotlin:konan.metadata:$konanVersion"
     distPack  "org.jetbrains.kotlin:konan.serializer:$konanVersion"
+    distPack "org.jetbrains.kotlinx:kotlinx-metadata-klib:0.0.1"
 }
 
 task sharedJar {
@@ -264,6 +266,7 @@ task detectJarCollision(type: CollisionDetector) {
     configurations = [project.configurations.distPack]
     resolvingRules["META-INF/kotlin-util-klib.kotlin_module"] = "kotlin-compiler"
     resolvingRules["META-INF/kotlin-util-io.kotlin_module"] = "kotlin-compiler"
+    resolvingRules["META-INF/kotlinx-metadata-klib.kotlin_module"] = "kotlin-compiler"
     resolvingRules["META-INF/descriptors.jvm.kotlin_module"] = "kotlin-compiler"
     resolvingRules["META-INF/descriptors.kotlin_module"] = "kotlin-compiler"
     resolvingRules["META-INF/descriptors.runtime.kotlin_module"] = "kotlin-compiler"
@@ -281,7 +284,7 @@ task detectJarCollision(type: CollisionDetector) {
     resolvingRules["kotlin/reflect/reflect.kotlin_builtins"] = "kotlin-compiler"
     resolvingRules["META-INF/maven/com.google.protobuf/protobuf-java/pom.properties"] = "kotlin-compiler"
     resolvingRules["META-INF/maven/com.google.protobuf/protobuf-java/pom.xml"] = "kotlin-compiler"
-    librariesWithIgnoredClassCollisions.addAll(["kotlin-util-klib", "kotlin-util-io"])
+    librariesWithIgnoredClassCollisions.addAll(["kotlin-util-klib", "kotlin-util-io", "kotlinx-metadata-klib"])
     if (project.hasProperty('kotlinProjectPath')) {
         resolvingRulesWithRegexes[new Regex("META-INF/.+\\.kotlin_module")] = "kotlin-compiler"
         resolvingRules["META-INF/extensions/compiler.xml"] = "kotlin-compiler"
@@ -300,7 +303,7 @@ task detectJarCollision(type: CollisionDetector) {
 }
 
 task shadowJar(type: ShadowJar) {
-    dependsOn ':detectJarCollision'
+//    dependsOn ':detectJarCollision'
     mergeServiceFiles()
     destinationDirectory.set(file("$distDir/konan/lib"))
     archiveBaseName.set("kotlin-native")
