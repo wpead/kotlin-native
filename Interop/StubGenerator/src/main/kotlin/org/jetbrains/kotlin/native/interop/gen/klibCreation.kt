@@ -23,7 +23,7 @@ fun createKlib(
         moduleName: String,
         manifest: Properties
 ) {
-    val packageName = "interop"
+    val packageName = moduleName
     val serializedMetadata = createSerializedMetadataFrom(moduleName, packageName, mode.result)
     val version = createLibraryVersion()
 

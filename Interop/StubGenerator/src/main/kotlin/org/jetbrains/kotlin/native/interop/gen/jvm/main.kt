@@ -312,7 +312,7 @@ private fun processCLib(args: Array<String>, additionalArgs: Map<String, Any> = 
 
     return when (mode) {
         is InteropGenerationMode.Metadata -> {
-            createKlib(cinteropArguments.output, mode, tool.target, nativeOutput.absolutePath, "TODO", def.manifestAddendProperties)
+            createKlib(cinteropArguments.output, mode, tool.target, nativeOutput.absolutePath, outKtPkg, def.manifestAddendProperties)
             null
         }
         is InteropGenerationMode.Textual ->
