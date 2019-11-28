@@ -39,7 +39,12 @@ class ToolConfig(userProvidedTargetName: String?, flavor: KotlinPlatform) {
     fun downloadDependencies() = platform.downloadDependencies()
 
     val defaultCompilerOpts =
-            platform.clang.targetLibclangArgs.toList()
+            // We compile with -O2 because Clang may insert inline asm in bitcode at -O0.
+            // It is undesirable in case of watchos_arm64 since we target armv7k
+            // for this target instead of arm64_32 because it is not supported in LLVM 8.
+            //
+            // Note that PCH and the *.c file should be compiled with the same optimization level.
+            platform.clang.targetLibclangArgs.toList() + listOf("-O2")
 
     val platformCompilerOpts = if (flavor == KotlinPlatform.JVM)
             platform.clang.hostCompilerArgsForJni.toList() else emptyList()
