@@ -3160,4 +3160,24 @@ KRef* LookupTLS(void** key, int index) {
   return start + index;
 }
 
+/**
+ * Theory of operations: Kotlin/Native runtime allows basic garbage collection for event-driven programs
+ * by cooperative safepointing across event loops on event processing and searching leak candidates amongst
+ * shared objects, such as `AtomicReference` and `FreezableAtomicReference` instances.
+ * We perform such analysis by pausing execution and finding cyclic references among candidates, those which
+ * participate in cycle are remembered for further analysis. Further analysis involves checking if particular
+ * candidate is only reachable from itself and other candidates using externalized trial deletion.
+ */
+void GC_RegisterWorker(void* worker) {
+  konan::consolePrintf("register %p\n", worker);
+}
+
+void GC_UnregisterWorker(void* worker) {
+  konan::consolePrintf("unregister %p\n", worker);
+}
+
+void GC_RendezvouzCallback(void* worker) {
+  konan::consolePrintf("%p: alive %d, I am %p\n", worker, aliveMemoryStatesCount, memoryState);
+}
+
 } // extern "C"
