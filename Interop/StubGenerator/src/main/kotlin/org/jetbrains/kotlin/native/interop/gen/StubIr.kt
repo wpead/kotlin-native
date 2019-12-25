@@ -102,7 +102,9 @@ sealed class StubOrigin {
     /**
      * Enum.Companion.byValue
      */
-    object SyntheticEnumByValue : StubOrigin()
+    class SyntheticEnumByValue(val enum: EnumDef) : StubOrigin()
+
+    class SyntheticEnumValueField(val enum: EnumDef) : StubOrigin()
 
     class ObjCCategoryInitMethod(
             val method: org.jetbrains.kotlin.native.interop.indexer.ObjCMethod

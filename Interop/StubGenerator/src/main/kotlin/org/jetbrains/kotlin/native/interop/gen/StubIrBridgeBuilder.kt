@@ -94,7 +94,7 @@ class StubIrBridgeBuilder(
                     element.external -> tryProcessCCallAnnotation(element)
                     element.isOptionalObjCMethod() -> { }
                     owner != null && owner.isInterface -> { }
-                    element.origin == StubOrigin.SyntheticEnumByValue -> {}
+                    element.origin is StubOrigin.SyntheticEnumByValue -> {}
                     else -> generateBridgeBody(element)
                 }
             } catch (e: Throwable) {

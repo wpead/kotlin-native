@@ -100,11 +100,21 @@ internal class ModuleMetadataEmitter(
                     km.constructors += elements.constructors.toList()
                     km.companionObject = element.companion?.nestedName()
                     km.uniqId = data.uniqIds.uniqIdForClass(element)
+                    if (element is ClassStub.Enum) {
+                        element.entries.mapTo(km.klibEnumEntries) { mapEnumEntry(it, classVisitingContext) }
+                    }
                 }
             }
             // Metadata stores classes as flat list.
             return listOf(kmClass) + elements.classes
         }
+
+        private fun mapEnumEntry(enumEntry: EnumEntryStub, data: VisitingContext) = KlibEnumEntry(
+                name = enumEntry.name,
+                uniqId = data.uniqIds.uniqIdForEnumEntry(enumEntry, data.container as ClassStub.Enum),
+                ordinal = 0,
+                annotations = mutableListOf()
+        )
 
         override fun visitTypealias(element: TypealiasStub, data: VisitingContext): KmTypeAlias =
                 with (MappingExtensions(data.typeParametersInterner)) {
@@ -200,7 +210,8 @@ private class MappingExtensions(
     val FunctionStub.flags: Flags
         get() = flagsOfNotNull(
                 Flag.IS_PUBLIC,
-                Flag.Function.IS_EXTERNAL,
+                Flag.Function.IS_EXTERNAL.takeIf { this.external },
+                Flag.Function.IS_DECLARATION.takeIf { !this.external },
                 Flag.HAS_ANNOTATIONS.takeIf { annotations.isNotEmpty() }
         ) or modality.flags
 

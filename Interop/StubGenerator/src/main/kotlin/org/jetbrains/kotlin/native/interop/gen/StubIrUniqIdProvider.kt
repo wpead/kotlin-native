@@ -21,6 +21,7 @@ internal class StubIrUniqIdProvider(private val context: ManglingContext) {
             is StubOrigin.Function -> function.origin.function.uniqueSymbolName
             is StubOrigin.ObjCMethod -> function.origin.method.uniqueSymbolName
             is StubOrigin.ObjCCategoryInitMethod -> "${function.origin.method.uniqueSymbolName}#Create"
+            is StubOrigin.SyntheticEnumByValue -> "${function.origin.enum.uniqueSymbolName}#ByValue"
             else -> error("Unexpected origin ${function.origin} for function ${function.name}.")
         }.toUniqId()
     }
@@ -31,6 +32,8 @@ internal class StubIrUniqIdProvider(private val context: ManglingContext) {
             is StubOrigin.Constant -> property.origin.constantDef.uniqueSymbolName
             is StubOrigin.Global -> property.origin.global.uniqueSymbolName
             // TODO: What to do with origin for enum entries and struct fields?
+            is StubOrigin.EnumEntry -> property.origin.constant.uniqSymbolName
+            is StubOrigin.SyntheticEnumValueField -> "${property.origin.enum.uniqueSymbolName}#Value"
             else -> error("Unexpected origin ${property.origin} for property ${property.name}.")
         }.toUniqId()
     }
@@ -82,6 +85,10 @@ internal class StubIrUniqIdProvider(private val context: ManglingContext) {
     fun uniqIdForConstructor(constructorStub: ConstructorStub): UniqId = with (mangler) {
         uniqSymbolNameForConstructor(constructorStub.origin)
                 ?: error("Unexpected origin ${constructorStub.origin} for constructor.")
+    }.toUniqId()
+
+    fun uniqIdForEnumEntry(enumEntry: EnumEntryStub, enum: ClassStub.Enum): UniqId = with (mangler) {
+        "${uniqSymbolNameForClass(enum.origin)}#${enumEntry.origin.constant.name}"
     }.toUniqId()
 
     /**

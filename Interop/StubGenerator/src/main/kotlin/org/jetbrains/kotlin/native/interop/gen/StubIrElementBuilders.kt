@@ -217,7 +217,7 @@ internal class EnumStubBuilder(
                 type = baseType,
                 kind = PropertyStub.Kind.Val(PropertyAccessor.Getter.GetConstructorParameter(constructorParameter)),
                 modality = MemberStubModality.OVERRIDE,
-                origin = StubOrigin.Synthetic)
+                origin = StubOrigin.SyntheticEnumValueField(enumDef))
 
         val canonicalsByValue = enumDef.constants
                 .groupingBy { it.value }
@@ -240,23 +240,32 @@ internal class EnumStubBuilder(
             entry to aliases
         }
         val origin = StubOrigin.Enum(enumDef)
-        val primaryConstructor = ConstructorStub(listOf(constructorParameter), emptyList(), isPrimary = true, origin = origin)
+        val primaryConstructor = ConstructorStub(
+                parameters = listOf(constructorParameter),
+                annotations = emptyList(),
+                isPrimary = true,
+                origin = origin,
+                visibility = VisibilityModifier.PRIVATE
+        )
 
         val byValueFunction = FunctionStub(
                 name = "byValue",
                 returnType = ClassifierStubType(classifier),
                 parameters = listOf(FunctionParameterStub("value", baseType)),
-                origin = StubOrigin.SyntheticEnumByValue,
+                origin = StubOrigin.SyntheticEnumByValue(enumDef),
                 receiver = null,
                 modality = MemberStubModality.FINAL,
                 annotations = emptyList()
         )
 
         val companion = ClassStub.Companion(
-                classifier.nested("Companion"),
+                classifier = classifier.nested("Companion"),
                 properties = canonicalEntriesWithAliases.flatMap { it.second },
                 methods = listOf(byValueFunction)
         )
+
+        val enumVar = constructEnumVarClass()
+
         val enum = ClassStub.Enum(
                 classifier = classifier,
                 entries = canonicalEntriesWithAliases.map { it.first },
@@ -264,11 +273,40 @@ internal class EnumStubBuilder(
                 constructors = listOf(primaryConstructor),
                 properties = listOf(valueProperty),
                 origin = origin,
+                // TODO: Enums should inherit from Enum<T>
                 interfaces = listOf(context.platform.getRuntimeType("CEnum"))
         )
         context.bridgeComponentsBuilder.enumToTypeMirror[enum] = baseTypeMirror
-
         return listOf(enum)
+    }
+
+    private fun constructEnumVarClass(): ClassStub.Enum {
+
+        val rawPtrConstructorParam = FunctionParameterStub("rawPtr", context.platform.getRuntimeType("NativePtr"))
+        val superClass = context.platform.getRuntimeType("CEnumVar")
+        require(superClass is ClassifierStubType)
+        val origin = StubOrigin.Synthetic
+        val primaryConstructor = ConstructorStub(
+                parameters = listOf(rawPtrConstructorParam),
+                isPrimary = true,
+                annotations = emptyList(),
+                origin = origin
+        )
+        val superClassInit = SuperClassInit(superClass, listOf(GetConstructorParameter(rawPtrConstructorParam)))
+
+        val companionSuper = superClass.nested("Type")
+        val typeSize = listOf(IntegralConstantStub(def.size, 4, true), IntegralConstantStub(def.align.toLong(), 4, true))
+        val companionSuperInit = SuperClassInit(companionSuper, typeSize)
+        val companionClassifier = classifier.nested("Companion")
+        val companion = ClassStub.Companion(companionClassifier, emptyList(), companionSuperInit)
+
+
+        return ClassStub.Simple(
+                classifier = classifier.nested("Var"),
+                constructors = listOf(primaryConstructor),
+                superClassInit = superClassInit,
+                companion = companion
+        )
     }
 
     private fun constructAliasProperty(enumConstant: EnumConstant, entry: EnumEntryStub): PropertyStub {

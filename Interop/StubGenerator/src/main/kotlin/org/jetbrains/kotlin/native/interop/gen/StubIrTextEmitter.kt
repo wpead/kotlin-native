@@ -203,7 +203,7 @@ class StubIrTextEmitter(
                 element.external -> out("external $header")
                 element.isOptionalObjCMethod() -> out("$header = optional()")
                 owner != null && owner.isInterface -> out(header)
-                element.origin == StubOrigin.SyntheticEnumByValue ->
+                element.origin is StubOrigin.SyntheticEnumByValue ->
                     out("$header = values().find { it.value == value }!!")
                 else -> block(header) {
                     functionBridgeBodies.getValue(element).forEach(out)
