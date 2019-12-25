@@ -200,6 +200,9 @@ internal class EnumStubBuilder(
         override val context: StubsBuildingContext,
         private val enumDef: EnumDef
 ) : StubElementBuilder {
+
+    val classifier = (context.mirror(EnumType(enumDef)) as TypeMirror.ByValue).valueType.classifier
+
     override fun build(): List<StubIrElement> {
         if (!context.isStrictEnum(enumDef)) {
             return generateEnumAsConstants(enumDef)
@@ -207,7 +210,6 @@ internal class EnumStubBuilder(
         val baseTypeMirror = context.mirror(enumDef.baseType)
         val baseType = baseTypeMirror.argType.toStubIrType()
 
-        val clazz = (context.mirror(EnumType(enumDef)) as TypeMirror.ByValue).valueType.classifier
         val constructorParameter = FunctionParameterStub("value", baseType)
 
         val valueProperty = PropertyStub(
@@ -228,15 +230,37 @@ internal class EnumStubBuilder(
                 }
         val (canonicalConstants, aliasConstants) = enumDef.constants.partition { canonicalsByValue[it.value] == it }
 
-        val canonicalEntries = canonicalConstants.map { constant ->
+        val canonicalEntriesWithAliases = canonicalConstants.map { constant ->
             val literal = context.tryCreateIntegralStub(enumDef.baseType, constant.value)
                     ?: error("Cannot create enum value ${constant.value} of type ${enumDef.baseType}")
-            val aliases = aliasConstants.filter { it.value == constant.value }.map { EnumEntryStub.Alias(it.name) }
-            EnumEntryStub(constant.name, literal, aliases)
+            val entry = EnumEntryStub(constant.name, literal, StubOrigin.EnumEntry(constant))
+            val aliases = aliasConstants
+                    .filter { it.value == constant.value }
+                    .map { constructAliasProperty(it, entry) }
+            entry to aliases
         }
         val origin = StubOrigin.Enum(enumDef)
         val primaryConstructor = ConstructorStub(listOf(constructorParameter), emptyList(), isPrimary = true, origin = origin)
-        val enum = ClassStub.Enum(clazz, canonicalEntries,
+
+        val byValueFunction = FunctionStub(
+                name = "byValue",
+                returnType = ClassifierStubType(classifier),
+                parameters = listOf(FunctionParameterStub("value", baseType)),
+                origin = StubOrigin.SyntheticEnumByValue,
+                receiver = null,
+                modality = MemberStubModality.FINAL,
+                annotations = emptyList()
+        )
+
+        val companion = ClassStub.Companion(
+                classifier.nested("Companion"),
+                properties = canonicalEntriesWithAliases.flatMap { it.second },
+                methods = listOf(byValueFunction)
+        )
+        val enum = ClassStub.Enum(
+                classifier = classifier,
+                entries = canonicalEntriesWithAliases.map { it.first },
+                companion = companion,
                 constructors = listOf(primaryConstructor),
                 properties = listOf(valueProperty),
                 origin = origin,
@@ -247,6 +271,14 @@ internal class EnumStubBuilder(
         return listOf(enum)
     }
 
+    private fun constructAliasProperty(enumConstant: EnumConstant, entry: EnumEntryStub): PropertyStub {
+        return PropertyStub(
+                enumConstant.name,
+                ClassifierStubType(classifier),
+                kind = PropertyStub.Kind.Val(PropertyAccessor.Getter.GetEnumEntry(entry)),
+                origin = StubOrigin.EnumEntry(enumConstant)
+        )
+    }
 
     private fun EnumConstant.isMoreCanonicalThan(other: EnumConstant): Boolean = with(other.name.toLowerCase()) {
         contains("min") || contains("max") ||

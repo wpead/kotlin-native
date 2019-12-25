@@ -99,6 +99,11 @@ sealed class StubOrigin {
      */
     object SyntheticDefaultConstructor : StubOrigin()
 
+    /**
+     * Enum.Companion.byValue
+     */
+    object SyntheticEnumByValue : StubOrigin()
+
     class ObjCCategoryInitMethod(
             val method: org.jetbrains.kotlin.native.interop.indexer.ObjCMethod
     ) : StubOrigin()
@@ -124,6 +129,8 @@ sealed class StubOrigin {
     ) : StubOrigin()
 
     class Enum(val enum: EnumDef) : StubOrigin()
+
+    class EnumEntry(val constant: EnumConstant) : StubOrigin()
 
     class Function(val function: FunctionDecl) : StubOrigin()
 
@@ -358,6 +365,11 @@ sealed class PropertyAccessor : FunctionalStub {
                 override val annotations: List<AnnotationStub> = emptyList()
         ) : Getter()
 
+        class GetEnumEntry(
+                val enumEntryStub: EnumEntryStub,
+                override val annotations: List<AnnotationStub> = emptyList()
+        ) : Getter()
+
         class ExternalGetter(
                 override val annotations: List<AnnotationStub> = emptyList()
         ) : Getter()
@@ -453,10 +465,8 @@ class ConstructorStub(
 class EnumEntryStub(
         val name: String,
         val constant: IntegralConstantStub,
-        val aliases: List<Alias>
-) {
-    class Alias(val name: String)
-}
+        val origin: StubOrigin.EnumEntry
+)
 
 class TypealiasStub(
         val alias: Classifier,
