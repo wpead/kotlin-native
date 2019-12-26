@@ -6,6 +6,6 @@ void cyclicDeinit();
 void cyclicAddWorker(void* worker);
 void cyclicRemoveWorker(void* worker);
 void cyclicRendezvouz(void* worker);
-void cyclicGarbageCollect();
+void cyclicScheduleGarbageCollect();
 
 #endif  // RUNTIME_CYCLIC_COLLECTOR_H

@@ -24,7 +24,7 @@ fun test1() {
     //assertEquals(1, cycles.size)
     //assertTrue(arrayOf(a).contentEquals(GC.findCycle(cycles[0])!!))
     //a.value = null
-    println(cycles)
+    println(cycles.joinToString(", "))
 }
 
 class Holder(var other: Any?)
