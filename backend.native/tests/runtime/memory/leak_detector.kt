@@ -17,11 +17,14 @@ fun dumpLeaks() {
 
 fun test1() {
     val a = AtomicReference<Any?>(null)
-    a.value = a
+    val b = AtomicReference<Any?>(null)
+    a.value = b
+    b.value = a
     val cycles = GC.detectCycles()!!
-    assertEquals(1, cycles.size)
-    assertTrue(arrayOf(a).contentEquals(GC.findCycle(cycles[0])!!))
-    a.value = null
+    //assertEquals(1, cycles.size)
+    //assertTrue(arrayOf(a).contentEquals(GC.findCycle(cycles[0])!!))
+    //a.value = null
+    println(cycles)
 }
 
 class Holder(var other: Any?)
@@ -56,6 +59,6 @@ fun test3() {
 
 fun main() {
     test1()
-    test2()
-    test3()
+    //test2()
+    //test3()
 }

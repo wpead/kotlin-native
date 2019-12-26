@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o.
+ * Copyright 2010-2019 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@
 #include "Alloc.h"
 #include "KAssert.h"
 #include "Atomic.h"
+#include "CyclicCollector.h"
 #include "Exceptions.h"
 #include "KString.h"
 #include "Memory.h"
@@ -301,8 +302,6 @@ inline bool isShareable(ContainerHeader* container) {
     return container == nullptr || container->shareable();
 }
 
-void garbageCollect();
-
 }  // namespace
 
 class ForeignRefManager {
@@ -540,6 +539,7 @@ namespace {
 void freeContainer(ContainerHeader* header) NO_INLINE;
 #if USE_GC
 void garbageCollect(MemoryState* state, bool force) NO_INLINE;
+void cyclicGarbageCollect() NO_INLINE;
 void rememberNewContainer(ContainerHeader* container);
 #endif  // USE_GC
 
@@ -1741,7 +1741,10 @@ MemoryState* initMemory() {
 #endif
   memoryState->tlsMap = konanConstructInstance<KThreadLocalStorageMap>();
   memoryState->foreignRefManager = ForeignRefManager::create();
-  atomicAdd(&aliveMemoryStatesCount, 1);
+  bool firstMemoryState = atomicAdd(&aliveMemoryStatesCount, 1) == 1;
+  if (firstMemoryState) {
+    cyclicInit();
+  }
   return memoryState;
 }
 
@@ -1765,6 +1768,9 @@ void deinitMemory(MemoryState* memoryState) {
 #endif // USE_GC
 
   bool lastMemoryState = atomicAdd(&aliveMemoryStatesCount, -1) == 0;
+  if (lastMemoryState) {
+    cyclicDeinit();
+  }
 
 #if TRACE_MEMORY
   if (IsStrictMemoryModel && lastMemoryState && allocCount > 0) {
@@ -3170,14 +3176,17 @@ KRef* LookupTLS(void** key, int index) {
  */
 void GC_RegisterWorker(void* worker) {
   konan::consolePrintf("register %p\n", worker);
+  cyclicAddWorker(worker);
 }
 
 void GC_UnregisterWorker(void* worker) {
   konan::consolePrintf("unregister %p\n", worker);
+  cyclicRemoveWorker(worker);
 }
 
 void GC_RendezvouzCallback(void* worker) {
   konan::consolePrintf("%p: alive %d, I am %p\n", worker, aliveMemoryStatesCount, memoryState);
+  cyclicRendezvouz(worker);
 }
 
 } // extern "C"
